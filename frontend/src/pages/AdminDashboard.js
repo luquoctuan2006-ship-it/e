@@ -1,0 +1,465 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import '../styles/AdminDashboard.css';
+
+const AdminDashboard = () => {
+  const { user } = useAuth();
+  const [pendingOrganizers, setPendingOrganizers] = useState([]);
+  const [approvedOrganizers, setApprovedOrganizers] = useState([]);
+  const [rejectedOrganizers, setRejectedOrganizers] = useState([]);
+  const [pendingEvents, setPendingEvents] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedOrganizer, setSelectedOrganizer] = useState(null);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [activeSection, setActiveSection] = useState('organizers');
+  const [activeTab, setActiveTab] = useState('pending');
+
+  useEffect(() => {
+    if (user?.role !== 'admin') {
+      window.location.href = '/';
+      return;
+    }
+    fetchData();
+  }, [user]);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+
+      // Fetch all organizers
+      const [
+        pendingRes,
+        approvedRes,
+        rejectedRes,
+        pendingEventsRes,
+        statsRes
+      ] = await Promise.all([
+        axios.get('http://localhost:5000/api/admin/organizers?status=pending', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get('http://localhost:5000/api/admin/organizers?status=approved', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get('http://localhost:5000/api/admin/organizers?status=rejected', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get('http://localhost:5000/api/admin/events?status=pending', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get('http://localhost:5000/api/admin/dashboard/stats', {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+
+      setPendingOrganizers(pendingRes.data.organizers || []);
+      setApprovedOrganizers(approvedRes.data.organizers || []);
+      setRejectedOrganizers(rejectedRes.data.organizers || []);
+      setPendingEvents(pendingEventsRes.data.events || []);
+      setStats(statsRes.data.stats || {});
+      setLoading(false);
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setLoading(false);
+    }
+  };
+
+  const handleApproveOrganizer = async (organizerId) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `http://localhost:5000/api/admin/organizers/${organizerId}/approve`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Organizer approved successfully!');
+      fetchData();
+      setSelectedOrganizer(null);
+    } catch (err) {
+      console.error('Error approving organizer:', err);
+      alert('Failed to approve organizer');
+    }
+  };
+
+  const handleRejectOrganizer = async (organizerId) => {
+    if (!rejectionReason.trim()) {
+      alert('Please provide a rejection reason');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `http://localhost:5000/api/admin/organizers/${organizerId}/reject`,
+        { reason: rejectionReason },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Organizer rejected successfully!');
+      fetchData();
+      setSelectedOrganizer(null);
+      setRejectionReason('');
+    } catch (err) {
+      console.error('Error rejecting organizer:', err);
+      alert('Failed to reject organizer');
+    }
+  };
+
+  const handleApproveEvent = async (eventId) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `http://localhost:5000/api/admin/events/${eventId}/approve`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Event approved successfully!');
+      fetchData();
+      setSelectedEvent(null);
+      setRejectionReason('');
+    } catch (err) {
+      console.error('Error approving event:', err);
+      alert('Failed to approve event');
+    }
+  };
+
+  const handleRejectEvent = async (eventId) => {
+    if (!rejectionReason.trim()) {
+      alert('Please provide a rejection reason');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `http://localhost:5000/api/admin/events/${eventId}/reject`,
+        { reason: rejectionReason },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Event rejected successfully!');
+      fetchData();
+      setSelectedEvent(null);
+      setRejectionReason('');
+    } catch (err) {
+      console.error('Error rejecting event:', err);
+      alert('Failed to reject event');
+    }
+  };
+
+  if (loading) return <div className="admin-loading">Đang tải dữ liệu...</div>;
+
+  const getActiveOrganizers = () => {
+    switch (activeTab) {
+      case 'pending':
+        return pendingOrganizers;
+      case 'approved':
+        return approvedOrganizers;
+      case 'rejected':
+        return rejectedOrganizers;
+      default:
+        return [];
+    }
+  };
+
+  return (
+    <div className="admin-dashboard">
+      <div className="admin-header">
+        <h1> Bảng Điều Khiển Admin</h1>
+        <p>Quản lý phê duyệt organizer và sự kiện</p>
+      </div>
+
+      {stats && (
+        <div className="admin-stats">
+          <div className="stat-card pending">
+            <div className="stat-number">{stats.pendingOrganizers}</div>
+            <div className="stat-label">Organizer Chờ</div>
+          </div>
+          <div className="stat-card approved">
+            <div className="stat-number">{stats.pendingEvents}</div>
+            <div className="stat-label">Sự Kiện Chờ</div>
+          </div>
+          <div className="stat-card approved">
+            <div className="stat-number">{stats.approvedOrganizers}</div>
+            <div className="stat-label">Organizer Duyệt</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-number">{stats.approvedEvents}</div>
+            <div className="stat-label">Sự Kiện Duyệt</div>
+          </div>
+        </div>
+      )}
+
+      <div className="admin-content">
+        <div className="section-tabs">
+          <button
+            className={`section-tab ${activeSection === 'organizers' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveSection('organizers');
+              setActiveTab('pending');
+            }}
+          >
+             Organizer
+          </button>
+          <button
+            className={`section-tab ${activeSection === 'events' ? 'active' : ''}`}
+            onClick={() => setActiveSection('events')}
+          >
+             Sự Kiện
+          </button>
+        </div>
+
+        {activeSection === 'organizers' ? (
+          <>
+            <div className="admin-tabs">
+              <button
+                className={`tab-btn ${activeTab === 'pending' ? 'active' : ''}`}
+                onClick={() => setActiveTab('pending')}
+              >
+                 Chờ Duyệt ({pendingOrganizers.length})
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'approved' ? 'active' : ''}`}
+                onClick={() => setActiveTab('approved')}
+              >
+                 Đã Duyệt ({approvedOrganizers.length})
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'rejected' ? 'active' : ''}`}
+                onClick={() => setActiveTab('rejected')}
+              >
+                 Từ Chối ({rejectedOrganizers.length})
+              </button>
+            </div>
+
+            <div className="organizers-list">
+              {getActiveOrganizers().length === 0 ? (
+                <div className="empty-state">
+                  <p>Không có dữ liệu</p>
+                </div>
+              ) : (
+                getActiveOrganizers().map(org => (
+                  <div
+                    key={org.id}
+                    className={`organizer-card ${org.approval_status}`}
+                    onClick={() => setSelectedOrganizer(org)}
+                  >
+                    <div className="org-header">
+                      <h3>{org.name}</h3>
+                      <span className={`status-badge ${org.approval_status}`}>
+                        {org.approval_status === 'pending' && ' Chờ duyệt'}
+                        {org.approval_status === 'approved' && ' Đã duyệt'}
+                        {org.approval_status === 'rejected' && ' Từ chối'}
+                      </span>
+                    </div>
+                    <p className="org-email"> {org.email}</p>
+                    <p className="org-phone"> {org.phone || 'Không có'}</p>
+                    <p className="org-created"> {new Date(org.created_at).toLocaleDateString('vi-VN')}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="organizers-list">
+              {pendingEvents.length === 0 ? (
+                <div className="empty-state">
+                  <p>Không có sự kiện chờ duyệt</p>
+                </div>
+              ) : (
+                pendingEvents.map(event => (
+                  <div
+                    key={event.id}
+                    className="event-card pending"
+                    onClick={() => setSelectedEvent(event)}
+                  >
+                    <div className="event-header">
+                      <h3>{event.title}</h3>
+                      <span className="status-badge pending">⏳ Chờ duyệt</span>
+                    </div>
+                    <p className="event-organizer"> {event.organizer_name}</p>
+                    <p className="event-venue"> {event.venue_name} - {event.city}</p>
+                    <p className="event-date"> {new Date(event.event_date).toLocaleString('vi-VN')}</p>
+                    <p className="event-price"> {parseInt(event.price).toLocaleString('vi-VN')} VND</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {selectedOrganizer && (
+        <div className="modal-overlay" onClick={() => setSelectedOrganizer(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <button
+              className="modal-close"
+              onClick={() => setSelectedOrganizer(null)}
+            >
+              ✕
+            </button>
+
+            <h2>{selectedOrganizer.name}</h2>
+
+            <div className="org-details">
+              <div className="detail-row">
+                <label>Email:</label>
+                <span>{selectedOrganizer.email}</span>
+              </div>
+              <div className="detail-row">
+                <label>Điện thoại:</label>
+                <span>{selectedOrganizer.phone || 'Không có'}</span>
+              </div>
+              <div className="detail-row">
+                <label>Website:</label>
+                <span>{selectedOrganizer.website || 'Không có'}</span>
+              </div>
+              <div className="detail-row">
+                <label>Mô tả:</label>
+                <span>{selectedOrganizer.description || 'Không có'}</span>
+              </div>
+              <div className="detail-row">
+                <label>Ngày tạo:</label>
+                <span>{new Date(selectedOrganizer.created_at).toLocaleString('vi-VN')}</span>
+              </div>
+
+              {selectedOrganizer.approval_status === 'rejected' && selectedOrganizer.rejection_reason && (
+                <div className="detail-row rejection-reason">
+                  <label>Lý do từ chối:</label>
+                  <span>{selectedOrganizer.rejection_reason}</span>
+                </div>
+              )}
+
+              {selectedOrganizer.approval_status === 'approved' && (
+                <div className="detail-row">
+                  <label>Duyệt lúc:</label>
+                  <span>{new Date(selectedOrganizer.approved_at).toLocaleString('vi-VN')}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-actions">
+              {selectedOrganizer.approval_status === 'pending' && (
+                <>
+                  <button
+                    className="btn btn-approve"
+                    onClick={() => handleApproveOrganizer(selectedOrganizer.id)}
+                  >
+                     Phê Duyệt
+                  </button>
+                  <div className="rejection-form">
+                    <label>Từ chối (tùy chọn):</label>
+                    <textarea
+                      value={rejectionReason}
+                      onChange={e => setRejectionReason(e.target.value)}
+                      placeholder="Nhập lý do từ chối (nếu có)..."
+                    />
+                    <button
+                      className="btn btn-reject"
+                      onClick={() => handleRejectOrganizer(selectedOrganizer.id)}
+                    >
+                       Từ Chối
+                    </button>
+                  </div>
+                </>
+              )}
+              {selectedOrganizer.approval_status === 'rejected' && (
+                <button
+                  className="btn btn-approve"
+                  onClick={() => handleApproveOrganizer(selectedOrganizer.id)}
+                >
+                   Duyệt Lại
+                </button>
+              )}
+              {selectedOrganizer.approval_status === 'approved' && (
+                <button
+                  className="btn btn-reject"
+                  onClick={() => handleRejectOrganizer(selectedOrganizer.id)}
+                >
+                   Thu Hồi
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedEvent && (
+        <div className="modal-overlay" onClick={() => setSelectedEvent(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <button
+              className="modal-close"
+              onClick={() => setSelectedEvent(null)}
+            >
+              ✕
+            </button>
+
+            <h2>{selectedEvent.title}</h2>
+
+            <div className="event-details">
+              <div className="detail-row">
+                <label>Organizer:</label>
+                <span>{selectedEvent.organizer_name}</span>
+              </div>
+              <div className="detail-row">
+                <label>Email:</label>
+                <span>{selectedEvent.organizer_email}</span>
+              </div>
+              <div className="detail-row">
+                <label>Địa điểm:</label>
+                <span>{selectedEvent.venue_name} - {selectedEvent.city}</span>
+              </div>
+              <div className="detail-row">
+                <label>Ngày & Giờ:</label>
+                <span>{new Date(selectedEvent.event_date).toLocaleString('vi-VN')}</span>
+              </div>
+              <div className="detail-row">
+                <label>Danh mục:</label>
+                <span>{selectedEvent.category_name || 'Không có'}</span>
+              </div>
+              <div className="detail-row">
+                <label>Giá vé:</label>
+                <span>{parseInt(selectedEvent.price).toLocaleString('vi-VN')} VND</span>
+              </div>
+              <div className="detail-row">
+                <label>Số lượng vé:</label>
+                <span>{selectedEvent.total_tickets}</span>
+              </div>
+              <div className="detail-row">
+                <label>Mô tả:</label>
+                <span>{selectedEvent.description || 'Không có'}</span>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                className="btn btn-approve"
+                onClick={() => handleApproveEvent(selectedEvent.id)}
+              >
+                 Phê Duyệt
+              </button>
+              <div className="rejection-form">
+                <label>Từ chối (tùy chọn):</label>
+                <textarea
+                  value={rejectionReason}
+                  onChange={e => setRejectionReason(e.target.value)}
+                  placeholder="Nhập lý do từ chối..."
+                />
+                <button
+                  className="btn btn-reject"
+                  onClick={() => handleRejectEvent(selectedEvent.id)}
+                >
+                   Từ Chối
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default AdminDashboard;

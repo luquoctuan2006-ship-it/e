@@ -1,62 +1,86 @@
-import React, { createContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { authAPI } from '../services/api';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      // Verify token and set user
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      // For simplicity, decode token or fetch user info
-      // Here, we'll assume token is valid and set user from localStorage
-      const userData = JSON.parse(localStorage.getItem('user'));
-      if (userData) {
-        setUser(userData);
-      }
+    const storedToken = localStorage.getItem('token');
+    const storedUser = localStorage.getItem('user');
+
+    if (storedToken && storedUser) {
+      setToken(storedToken);
+      setUser(JSON.parse(storedUser));
     }
     setLoading(false);
   }, []);
 
-  const login = async (username, password) => {
+  const login = async (email, password) => {
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/login', { username, password });
-      const { token, user } = response.data;
+      setError(null);
+      const response = await authAPI.login({ email, password });
+      const { token, user } = response;
+
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+      setToken(token);
       setUser(user);
-      return { success: true };
-    } catch (error) {
-      return { success: false, message: error.response?.data?.message || 'Đăng nhập thất bại' };
+      return response;
+    } catch (err) {
+      setError(err.message);
+      throw err;
     }
   };
 
   const register = async (userData) => {
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/register', userData);
-      return { success: true, message: response.data.message };
-    } catch (error) {
-      return { success: false, message: error.response?.data?.message || 'Đăng ký thất bại' };
+      setError(null);
+      const response = await authAPI.register(userData);
+      const { token, user } = response;
+
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+
+      setToken(token);
+      setUser(user);
+      return response;
+    } catch (err) {
+      setError(err.message);
+      throw err;
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    delete axios.defaults.headers.common['Authorization'];
+    authAPI.logout();
+    setToken(null);
     setUser(null);
+    setError(null);
   };
 
-  return (
-    <AuthContext.Provider value={{ user, login, register, logout, loading }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value = {
+    user,
+    token,
+    loading,
+    error,
+    login,
+    register,
+    logout,
+    isAuthenticated: !!token,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-export default AuthContext;
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};

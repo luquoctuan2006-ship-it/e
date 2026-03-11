@@ -1,48 +1,178 @@
 const express = require('express');
-const router = express.Router();
-const db = require('../config/db');
-const { auth, adminAuth } = require('../middleware/auth');
+const { verifyToken, isAdmin } = require('../middleware/auth');
 
-// Đặt vé
-router.post('/', auth, async (req, res) => {
+const router = express.Router();
+
+router.get('/my-bookings', verifyToken, async (req, res) => {
+  const db = req.app.locals.db;
+  const { status, page = 1, limit = 10 } = req.query;
+
+  try {
+    let query = `
+      SELECT b.*, 
+             e.title as event_title, e.event_date, e.image_url as event_image,
+             v.name as venue_name, v.address as venue_address, v.city
+      FROM bookings b
+      JOIN events e ON b.event_id = e.id
+      JOIN venues v ON e.venue_id = v.id
+      WHERE b.user_id = ?
+    `;
+    
+    const params = [req.user.id];
+
+    if (status) {
+      query += ' AND b.status = ?';
+      params.push(status);
+    }
+
+    query += ' ORDER BY b.booking_date DESC LIMIT ? OFFSET ?';
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    params.push(parseInt(limit), offset);
+
+    const [bookings] = await db.query(query, params);
+    let countQuery = 'SELECT COUNT(*) as total FROM bookings WHERE user_id = ?';
+    const countParams = [req.user.id];
+    if (status) {
+      countQuery += ' AND status = ?';
+      countParams.push(status);
+    }
+
+    const [countResult] = await db.query(countQuery, countParams);
+
+    res.json({
+      bookings,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: countResult[0].total,
+        totalPages: Math.ceil(countResult[0].total / parseInt(limit))
+      }
+    });
+  } catch (err) {
+    console.error('Get bookings error:', err);
+    res.status(500).json({ error: { message: 'Failed to fetch bookings', status: 500 } });
+  }
+});
+router.get('/', verifyToken, isAdmin, async (req, res) => {
+  const db = req.app.locals.db;
+  const { status, event_id, page = 1, limit = 20 } = req.query;
+
+  try {
+    let query = `
+      SELECT b.*, 
+             u.username, u.email, u.full_name,
+             e.title as event_title, e.event_date
+      FROM bookings b
+      JOIN users u ON b.user_id = u.id
+      JOIN events e ON b.event_id = e.id
+      WHERE 1=1
+    `;
+    
+    const params = [];
+
+    if (status) {
+      query += ' AND b.status = ?';
+      params.push(status);
+    }
+
+    if (event_id) {
+      query += ' AND b.event_id = ?';
+      params.push(event_id);
+    }
+
+    query += ' ORDER BY b.booking_date DESC LIMIT ? OFFSET ?';
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    params.push(parseInt(limit), offset);
+
+    const [bookings] = await db.query(query, params);
+
+    res.json({ bookings });
+  } catch (err) {
+    console.error('Get all bookings error:', err);
+    res.status(500).json({ error: { message: 'Failed to fetch bookings', status: 500 } });
+  }
+});
+
+router.get('/:id', verifyToken, async (req, res) => {
+  const db = req.app.locals.db;
+  const { id } = req.params;
+
+  try {
+    const [bookings] = await db.query(`
+      SELECT b.*, 
+             u.username, u.email, u.full_name, u.phone,
+             e.title as event_title, e.description as event_description, e.event_date, e.image_url as event_image,
+             v.name as venue_name, v.address as venue_address, v.city, v.map_url,
+      FROM bookings b
+      JOIN users u ON b.user_id = u.id
+      JOIN events e ON b.event_id = e.id
+      JOIN venues v ON e.venue_id = v.id
+      WHERE b.id = ?
+    `, [id]);
+
+    if (bookings.length === 0) {
+      return res.status(404).json({ error: { message: 'Booking not found', status: 404 } });
+    }
+
+    const booking = bookings[0];
+
+    if (req.user.role !== 'admin' && booking.user_id !== req.user.id) {
+      return res.status(403).json({ error: { message: 'Access denied', status: 403 } });
+    }
+
+    res.json({ booking });
+  } catch (err) {
+    console.error('Get booking error:', err);
+    res.status(500).json({ error: { message: 'Failed to fetch booking', status: 500 } });
+  }
+});
+
+router.post('/', verifyToken, async (req, res) => {
+  const db = req.app.locals.db;
+  const { event_id, quantity } = req.body;
+
   const connection = await db.getConnection();
   
   try {
     await connection.beginTransaction();
 
-    const { event_id, quantity } = req.body;
-    const user_id = req.user.id;
+    if (!event_id || !quantity || quantity < 1) {
+      await connection.rollback();
+      return res.status(400).json({ error: { message: 'Invalid booking data', status: 400 } });
+    }
 
-    // Kiểm tra sự kiện và số vé còn lại
     const [events] = await connection.query(
-      'SELECT * FROM events WHERE id = ? AND status = "active"',
+      'SELECT * FROM events WHERE id = ? AND status = "active" FOR UPDATE',
       [event_id]
     );
 
     if (events.length === 0) {
       await connection.rollback();
-      return res.status(404).json({ message: 'Sự kiện không tồn tại hoặc đã đóng' });
+      return res.status(404).json({ error: { message: 'Event not found or not active', status: 404 } });
     }
 
     const event = events[0];
-
+    if (new Date(event.event_date) < new Date()) {
+      await connection.rollback();
+      return res.status(400).json({ error: { message: 'Cannot book past events', status: 400 } });
+    }
     if (event.available_tickets < quantity) {
       await connection.rollback();
       return res.status(400).json({ 
-        message: 'Không đủ vé',
-        available: event.available_tickets 
+        error: { 
+          message: `Only ${event.available_tickets} tickets available`, 
+          status: 400,
+          available: event.available_tickets
+        } 
       });
     }
-
     const total_price = event.price * quantity;
 
-    // Tạo booking
-    const [result] = await connection.query(
-      'INSERT INTO bookings (user_id, event_id, quantity, total_price) VALUES (?, ?, ?, ?)',
-      [user_id, event_id, quantity, total_price]
+    const [bookingResult] = await connection.query(
+      'INSERT INTO bookings (user_id, event_id, quantity, total_price, status) VALUES (?, ?, ?, ?, ?)',
+      [req.user.id, event_id, quantity, total_price, 'pending']
     );
 
-    // Cập nhật số vé còn lại
     await connection.query(
       'UPDATE events SET available_tickets = available_tickets - ? WHERE id = ?',
       [quantity, event_id]
@@ -50,86 +180,65 @@ router.post('/', auth, async (req, res) => {
 
     await connection.commit();
 
-    res.status(201).json({ 
-      message: 'Đặt vé thành công',
-      bookingId: result.insertId,
-      total_price 
+    const [newBooking] = await db.query(`
+      SELECT b.*, 
+             e.title as event_title, e.event_date, e.image_url as event_image,
+             v.name as venue_name
+      FROM bookings b
+      JOIN events e ON b.event_id = e.id
+      JOIN venues v ON e.venue_id = v.id
+      WHERE b.id = ?
+    `, [bookingResult.insertId]);
+
+    res.status(201).json({
+      message: 'Booking created successfully',
+      booking: newBooking[0]
     });
-  } catch (error) {
+  } catch (err) {
     await connection.rollback();
-    res.status(500).json({ message: 'Lỗi server', error: error.message });
+    console.error('Create booking error:', err);
+    res.status(500).json({ error: { message: 'Failed to create booking', status: 500 } });
   } finally {
     connection.release();
   }
 });
 
-// Lấy danh sách booking của user
-router.get('/my-bookings', auth, async (req, res) => {
-  try {
-    const [bookings] = await db.query(
-      `SELECT b.*, e.title, e.event_date, e.location, e.image_url 
-       FROM bookings b 
-       JOIN events e ON b.event_id = e.id 
-       WHERE b.user_id = ? 
-       ORDER BY b.booking_date DESC`,
-      [req.user.id]
-    );
-    
-    res.json(bookings);
-  } catch (error) {
-    res.status(500).json({ message: 'Lỗi server', error: error.message });
-  }
-});
+router.put('/:id/cancel', verifyToken, async (req, res) => {
+  const db = req.app.locals.db;
+  const { id } = req.params;
 
-// Lấy tất cả bookings (Admin only)
-router.get('/all', auth, adminAuth, async (req, res) => {
-  try {
-    const [bookings] = await db.query(
-      `SELECT b.*, u.username, u.email, e.title, e.event_date 
-       FROM bookings b 
-       JOIN users u ON b.user_id = u.id 
-       JOIN events e ON b.event_id = e.id 
-       ORDER BY b.booking_date DESC`
-    );
-    
-    res.json(bookings);
-  } catch (error) {
-    res.status(500).json({ message: 'Lỗi server', error: error.message });
-  }
-});
-
-// Hủy booking
-router.put('/:id/cancel', auth, async (req, res) => {
   const connection = await db.getConnection();
-  
+
   try {
     await connection.beginTransaction();
 
-    // Lấy thông tin booking
     const [bookings] = await connection.query(
-      'SELECT * FROM bookings WHERE id = ? AND user_id = ?',
-      [req.params.id, req.user.id]
+      'SELECT * FROM bookings WHERE id = ? FOR UPDATE',
+      [id]
     );
 
     if (bookings.length === 0) {
       await connection.rollback();
-      return res.status(404).json({ message: 'Không tìm thấy booking' });
+      return res.status(404).json({ error: { message: 'Booking not found', status: 404 } });
     }
 
     const booking = bookings[0];
 
-    if (booking.status === 'cancelled') {
+    if (req.user.role !== 'admin' && booking.user_id !== req.user.id) {
       await connection.rollback();
-      return res.status(400).json({ message: 'Booking đã bị hủy' });
+      return res.status(403).json({ error: { message: 'Access denied', status: 403 } });
     }
 
-    // Cập nhật trạng thái booking
+    if (booking.status === 'cancelled') {
+      await connection.rollback();
+      return res.status(400).json({ error: { message: 'Booking already cancelled', status: 400 } });
+    }
+
     await connection.query(
-      'UPDATE bookings SET status = "cancelled" WHERE id = ?',
-      [req.params.id]
+      'UPDATE bookings SET status = ? WHERE id = ?',
+      ['cancelled', id]
     );
 
-    // Hoàn lại số vé
     await connection.query(
       'UPDATE events SET available_tickets = available_tickets + ? WHERE id = ?',
       [booking.quantity, booking.event_id]
@@ -137,12 +246,35 @@ router.put('/:id/cancel', auth, async (req, res) => {
 
     await connection.commit();
 
-    res.json({ message: 'Hủy vé thành công' });
-  } catch (error) {
+    res.json({ message: 'Booking cancelled successfully' });
+  } catch (err) {
     await connection.rollback();
-    res.status(500).json({ message: 'Lỗi server', error: error.message });
+    console.error('Cancel booking error:', err);
+    res.status(500).json({ error: { message: 'Failed to cancel booking', status: 500 } });
   } finally {
     connection.release();
+  }
+});
+
+router.get('/stats/overview', verifyToken, isAdmin, async (req, res) => {
+  const db = req.app.locals.db;
+
+  try {
+    const [stats] = await db.query(`
+      SELECT 
+        COUNT(*) as total_bookings,
+        SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed_bookings,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_bookings,
+        SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_bookings,
+        SUM(total_price) as total_revenue,
+        SUM(CASE WHEN status = 'confirmed' THEN total_price ELSE 0 END) as confirmed_revenue
+      FROM bookings
+    `);
+
+    res.json({ stats: stats[0] });
+  } catch (err) {
+    console.error('Get stats error:', err);
+    res.status(500).json({ error: { message: 'Failed to fetch statistics', status: 500 } });
   }
 });
 

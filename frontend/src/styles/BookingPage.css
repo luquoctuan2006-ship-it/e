@@ -1,0 +1,124 @@
+/* styles/BookingPage.css */
+.booking-page {
+  background: white;
+  border-radius: 8px;
+  padding: 40px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.booking-page h1 {
+  margin-bottom: 30px;
+  color: #2c3e50;
+  text-align: center;
+}
+
+.booking-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.event-summary {
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  height: fit-content;
+}
+
+.event-summary h2 {
+  font-size: 18px;
+  margin-bottom: 15px;
+  color: #2c3e50;
+}
+
+.event-summary p {
+  margin-bottom: 10px;
+  color: #555;
+}
+
+.booking-form {
+  background-color: white;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #bdc3c7;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.form-group input:disabled {
+  background-color: #f0f0f0;
+  cursor: not-allowed;
+}
+
+.booking-summary {
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  margin: 20px 0;
+}
+
+.booking-summary p {
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  color: #555;
+}
+
+.booking-summary .total {
+  font-size: 18px;
+  font-weight: bold;
+  color: #e74c3c;
+  border-top: 1px solid #ddd;
+  padding-top: 10px;
+  margin-top: 10px;
+}
+
+.booking-form button {
+  width: 100%;
+  padding: 15px;
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.booking-form button:hover:not(:disabled) {
+  background-color: #229954;
+}
+
+.booking-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .booking-container {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .booking-page {
+    padding: 20px;
+  }
+}
