@@ -238,6 +238,33 @@
   background: #fffaf0;
 }
 
+/* contact message cards */
+.contact-card {
+  background: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-left: 5px solid #ddd;
+}
+
+.contact-card:hover {
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  border-left-color: #007bff;
+  transform: translateY(-3px);
+}
+
+.contact-card.pending {
+  border-left-color: #ffc107;
+  background: #fffaf0;
+}
+
+.contact-card.responded {
+  border-left-color: #28a745;
+  background: #f0fef4;
+}
+
 .event-card.approved {
   border-left-color: #28a745;
   background: #f0fef4;

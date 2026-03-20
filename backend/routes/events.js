@@ -28,7 +28,8 @@ router.post('/organizer/create', verifyToken, isOrganizer, async (req, res) => {
     total_tickets, 
     price, 
     image_url, 
-    category_id, 
+    category_id,
+    ticket_types
   } = req.body;
 
   try {
@@ -99,6 +100,24 @@ router.post('/organizer/create', verifyToken, isOrganizer, async (req, res) => {
       WHERE e.id = ?
     `, [result.insertId]);
 
+    // Handle ticket types if provided
+    if (ticket_types && Array.isArray(ticket_types) && ticket_types.length > 0) {
+      for (const ticketType of ticket_types) {
+        await db.query(
+          `INSERT INTO ticket_types (event_id, name, description, price, quantity, available_quantity)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            result.insertId,
+            ticketType.name,
+            ticketType.description || null,
+            ticketType.price,
+            ticketType.quantity,
+            ticketType.quantity
+          ]
+        );
+      }
+    }
+
     res.status(201).json({
       message: 'Event created successfully. Waiting for admin approval.',
       event: event[0]
@@ -125,6 +144,171 @@ router.post('/organizer/create', verifyToken, isOrganizer, async (req, res) => {
   }
 });
 
+
+router.get('/organizer/details/:id', verifyToken, isOrganizer, async (req, res) => {
+  const db = req.app.locals.db;
+  const eventId = req.params.id;
+
+  try {
+    // Get the organizer ID for the current user
+    let [organizerResult] = await db.query(
+      'SELECT id FROM organizers WHERE user_id = ?',
+      [req.user.id]
+    );
+
+    let organizerId;
+
+    if (organizerResult.length === 0) {
+      try {
+        const [newOrganizerResult] = await db.query(
+          'INSERT INTO organizers (name, email, user_id) VALUES (?, ?, ?)',
+          [req.user.username || 'Default Organizer', req.user.email, req.user.id]
+        );
+        organizerId = newOrganizerResult.insertId;
+      } catch (err) {
+        console.error('Error creating organizer profile:', err);
+        return res.status(500).json({ 
+          error: { 
+            message: 'Failed to create organizer profile', 
+            status: 500 
+          } 
+        });
+      }
+    } else {
+      organizerId = organizerResult[0].id;
+    }
+
+    // Get event and verify it belongs to this organizer
+    const [events] = await db.query(`
+      SELECT e.* 
+      FROM events e
+      WHERE e.id = ? AND e.organizer_id = ?
+    `, [eventId, organizerId]);
+
+    if (events.length === 0) {
+      return res.status(404).json({ 
+        error: { 
+          message: 'Event not found or you do not have permission to edit it', 
+          status: 404 
+        } 
+      });
+    }
+
+    res.json({ event: events[0] });
+  } catch (err) {
+    console.error('Get organizer event details error:', err);
+    res.status(500).json({ 
+      error: { 
+        message: 'Failed to fetch event details', 
+        status: 500 
+      } 
+    });
+  }
+});
+
+router.put('/organizer/update/:id', verifyToken, isOrganizer, async (req, res) => {
+  const db = req.app.locals.db;
+  const eventId = req.params.id;
+  const { title, description, event_date, venue_id, price, image_url, category_id } = req.body;
+
+  try {
+    // Get the organizer ID for the current user
+    let [organizerResult] = await db.query(
+      'SELECT id FROM organizers WHERE user_id = ?',
+      [req.user.id]
+    );
+
+    let organizerId;
+
+    if (organizerResult.length === 0) {
+      try {
+        const [newOrganizerResult] = await db.query(
+          'INSERT INTO organizers (name, email, user_id) VALUES (?, ?, ?)',
+          [req.user.username || 'Default Organizer', req.user.email, req.user.id]
+        );
+        organizerId = newOrganizerResult.insertId;
+      } catch (err) {
+        console.error('Error creating organizer profile:', err);
+        return res.status(500).json({ 
+          error: { 
+            message: 'Failed to create organizer profile', 
+            status: 500 
+          } 
+        });
+      }
+    } else {
+      organizerId = organizerResult[0].id;
+    }
+
+    // Verify the event belongs to this organizer
+    const [checkEvent] = await db.query(
+      'SELECT id FROM events WHERE id = ? AND organizer_id = ?',
+      [eventId, organizerId]
+    );
+
+    if (checkEvent.length === 0) {
+      return res.status(403).json({ 
+        error: { 
+          message: 'You do not have permission to edit this event', 
+          status: 403 
+        } 
+      });
+    }
+
+    // Validate required fields
+    if (!title || !event_date || !venue_id || price === undefined) {
+      return res.status(400).json({ 
+        error: { 
+          message: 'Missing required fields: title, event_date, venue_id, price', 
+          status: 400 
+        } 
+      });
+    }
+
+    // Update the event
+    await db.query(`
+      UPDATE events 
+      SET title = ?, description = ?, event_date = ?, venue_id = ?, price = ?, image_url = ?, category_id = ?
+      WHERE id = ? AND organizer_id = ?
+    `, [title, description || null, event_date, venue_id, price, image_url || null, category_id || null, eventId, organizerId]);
+
+    // Fetch and return updated event
+    const [event] = await db.query(`
+      SELECT e.*, 
+             v.name as venue_name, v.city,
+             c.name as category_name,
+             o.name as organizer_name
+      FROM events e
+      JOIN venues v ON e.venue_id = v.id
+      LEFT JOIN categories c ON e.category_id = c.id
+      LEFT JOIN organizers o ON e.organizer_id = o.id
+      WHERE e.id = ?
+    `, [eventId]);
+
+    res.json({
+      message: 'Event updated successfully',
+      event: event[0]
+    });
+  } catch (err) {
+    console.error('Update organizer event error:', err);
+    
+    if (err.code === 'ER_NO_REFERENCED_ROW_2') {
+      return res.status(400).json({ 
+        error: { 
+          message: 'Invalid venue_id or category_id', 
+          status: 400 
+        } 
+      });
+    }
+    
+    res.status(500).json({ 
+      error: { 
+        message: 'Failed to update event', 
+        status: 500 
+      } 
+    });
+  }
+});
 
 router.get('/organizer/my-events', verifyToken, isOrganizer, async (req, res) => {
   const db = req.app.locals.db;
@@ -516,16 +700,181 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
-router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
+// Ticket Types Routes
+router.get('/:id/ticket-types', optionalAuth, async (req, res) => {
   const db = req.app.locals.db;
 
   try {
-    await db.query('DELETE FROM events WHERE id = ?', [req.params.id]);
-    res.json({ message: 'Event deleted successfully' });
+    const [ticketTypes] = await db.query(
+      'SELECT * FROM ticket_types WHERE event_id = ? ORDER BY id',
+      [req.params.id]
+    );
+
+    res.json({ 
+      ticket_types: ticketTypes 
+    });
   } catch (err) {
-    console.error('Delete event error:', err);
+    console.error('Get ticket types error:', err);
     res.status(500).json({ 
-      error: { message: 'Failed to delete event', status: 500 } 
+      error: { message: 'Failed to get ticket types', status: 500 } 
+    });
+  }
+});
+
+router.post('/:id/ticket-types', verifyToken, isOrganizer, async (req, res) => {
+  const db = req.app.locals.db;
+  const { name, description, price, quantity } = req.body;
+  const eventId = req.params.id;
+
+  try {
+    if (!name || price === undefined || !quantity) {
+      return res.status(400).json({
+        error: {
+          message: 'Missing required fields: name, price, quantity',
+          status: 400
+        }
+      });
+    }
+
+    // Verify event exists and belongs to organizer
+    const [event] = await db.query(
+      'SELECT organizer_id FROM events WHERE id = ?',
+      [eventId]
+    );
+
+    if (event.length === 0) {
+      return res.status(404).json({
+        error: { message: 'Event not found', status: 404 }
+      });
+    }
+
+    // Check organizer permission if not admin
+    if (req.user.role !== 'admin') {
+      const [organizer] = await db.query(
+        'SELECT id FROM organizers WHERE user_id = ?',
+        [req.user.id]
+      );
+
+      if (!organizer.length || organizer[0].id !== event[0].organizer_id) {
+        return res.status(403).json({
+          error: { message: 'Access denied', status: 403 }
+        });
+      }
+    }
+
+    const [result] = await db.query(
+      `INSERT INTO ticket_types (event_id, name, description, price, quantity, available_quantity)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [eventId, name, description || null, price, quantity, quantity]
+    );
+
+    res.status(201).json({
+      message: 'Ticket type created successfully',
+      ticket_type: {
+        id: result.insertId,
+        event_id: eventId,
+        name,
+        description,
+        price,
+        quantity,
+        available_quantity: quantity
+      }
+    });
+  } catch (err) {
+    console.error('Create ticket type error:', err);
+    res.status(500).json({
+      error: { message: 'Failed to create ticket type', status: 500 }
+    });
+  }
+});
+
+router.put('/ticket-types/:ticketTypeId', verifyToken, isOrganizer, async (req, res) => {
+  const db = req.app.locals.db;
+  const { name, description, price, quantity } = req.body;
+  const ticketTypeId = req.params.ticketTypeId;
+
+  try {
+    // Get ticket type and verify event ownership
+    const [ticketType] = await db.query(
+      `SELECT tt.*, e.organizer_id FROM ticket_types tt
+       JOIN events e ON tt.event_id = e.id
+       WHERE tt.id = ?`,
+      [ticketTypeId]
+    );
+
+    if (ticketType.length === 0) {
+      return res.status(404).json({
+        error: { message: 'Ticket type not found', status: 404 }
+      });
+    }
+
+    // Check organizer permission if not admin
+    if (req.user.role !== 'admin') {
+      const [organizer] = await db.query(
+        'SELECT id FROM organizers WHERE user_id = ?',
+        [req.user.id]
+      );
+
+      if (!organizer.length || organizer[0].id !== ticketType[0].organizer_id) {
+        return res.status(403).json({
+          error: { message: 'Access denied', status: 403 }
+        });
+      }
+    }
+
+    await db.query(
+      `UPDATE ticket_types SET name = ?, description = ?, price = ?, quantity = ? WHERE id = ?`,
+      [name || ticketType[0].name, description, price, quantity, ticketTypeId]
+    );
+
+    res.json({ message: 'Ticket type updated successfully' });
+  } catch (err) {
+    console.error('Update ticket type error:', err);
+    res.status(500).json({
+      error: { message: 'Failed to update ticket type', status: 500 }
+    });
+  }
+});
+
+router.delete('/ticket-types/:ticketTypeId', verifyToken, isOrganizer, async (req, res) => {
+  const db = req.app.locals.db;
+  const ticketTypeId = req.params.ticketTypeId;
+
+  try {
+    // Get ticket type and verify event ownership
+    const [ticketType] = await db.query(
+      `SELECT tt.*, e.organizer_id FROM ticket_types tt
+       JOIN events e ON tt.event_id = e.id
+       WHERE tt.id = ?`,
+      [ticketTypeId]
+    );
+
+    if (ticketType.length === 0) {
+      return res.status(404).json({
+        error: { message: 'Ticket type not found', status: 404 }
+      });
+    }
+
+    // Check organizer permission if not admin
+    if (req.user.role !== 'admin') {
+      const [organizer] = await db.query(
+        'SELECT id FROM organizers WHERE user_id = ?',
+        [req.user.id]
+      );
+
+      if (!organizer.length || organizer[0].id !== ticketType[0].organizer_id) {
+        return res.status(403).json({
+          error: { message: 'Access denied', status: 403 }
+        });
+      }
+    }
+
+    await db.query('DELETE FROM ticket_types WHERE id = ?', [ticketTypeId]);
+    res.json({ message: 'Ticket type deleted successfully' });
+  } catch (err) {
+    console.error('Delete ticket type error:', err);
+    res.status(500).json({
+      error: { message: 'Failed to delete ticket type', status: 500 }
     });
   }
 });

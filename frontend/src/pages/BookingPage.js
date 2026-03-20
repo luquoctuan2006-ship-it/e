@@ -10,13 +10,15 @@ const BookingPage = () => {
   const { user } = useAuth();
 
   const [event, setEvent] = useState(null);
+  const [ticketTypes, setTicketTypes] = useState([]);
+  const [selectedTickets, setSelectedTickets] = useState({});
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [useTicketTypes, setUseTicketTypes] = useState(false);
 
   useEffect(() => {
-    // Kiểm tra đăng nhập
     if (!user) {
       navigate('/login');
       return;
@@ -29,6 +31,22 @@ const BookingPage = () => {
           throw new Error('Không tìm thấy sự kiện');
         }
         setEvent(data.event);
+
+        try {
+          const ticketData = await eventsAPI.getTicketTypes(id);
+          if (ticketData && ticketData.ticket_types && ticketData.ticket_types.length > 0) {
+            setTicketTypes(ticketData.ticket_types);
+            setUseTicketTypes(true);
+            const initial = {};
+            ticketData.ticket_types.forEach(t => {
+              initial[t.id] = 0;
+            });
+            setSelectedTickets(initial);
+          }
+        } catch (err) {
+          console.log('Ticket types not available:', err.message);
+          setUseTicketTypes(false);
+        }
       } catch (err) {
         setError(err.message || 'Lỗi khi tải sự kiện');
       } finally {
@@ -38,31 +56,71 @@ const BookingPage = () => {
     fetchEvent();
   }, [id, user, navigate]);
 
+  const handleTicketQuantityChange = (ticketTypeId, value) => {
+    setSelectedTickets(prev => ({
+      ...prev,
+      [ticketTypeId]: Math.max(0, value)
+    }));
+  };
+
+  const getTotalSelectedTickets = () => {
+    return Object.values(selectedTickets).reduce((sum, qty) => sum + qty, 0);
+  };
+
+  const getTotalCost = () => {
+    if (useTicketTypes) {
+      return ticketTypes.reduce((sum, ticketType) => {
+        return sum + (ticketType.price * (selectedTickets[ticketType.id] || 0));
+      }, 0);
+    }
+    return Number(event?.price || 0) * quantity;
+  };
+
   const handleBooking = async (e) => {
     e.preventDefault();
     setBookingLoading(true);
     setError('');
 
-    // Validate
-    if (quantity < 1) {
-      setError('Số lượng vé phải lớn hơn 0');
-      setBookingLoading(false);
-      return;
-    }
-
-    if (event.available_tickets && quantity > event.available_tickets) {
-      setError(`Chỉ còn ${event.available_tickets} vé`);
-      setBookingLoading(false);
-      return;
-    }
-
     try {
-      await bookingsAPI.create({
+      let bookingData = {
         event_id: id,
-        quantity,
-      });
+      };
 
-      alert(' Đặt vé thành công!');
+      if (useTicketTypes) {
+        const totalTickets = getTotalSelectedTickets();
+        if (totalTickets < 1) {
+          setError('Vui lòng chọn ít nhất 1 vé');
+          setBookingLoading(false);
+          return;
+        }
+
+        const ticketDetails = Object.keys(selectedTickets)
+          .filter(ticketTypeId => selectedTickets[ticketTypeId] > 0)
+          .map(ticketTypeId => ({
+            ticket_type_id: parseInt(ticketTypeId),
+            quantity: selectedTickets[ticketTypeId]
+          }));
+
+        bookingData.ticket_details = ticketDetails;
+      } else {
+        if (quantity < 1) {
+          setError('Số lượng vé phải lớn hơn 0');
+          setBookingLoading(false);
+          return;
+        }
+
+        if (event.available_tickets && quantity > event.available_tickets) {
+          setError(`Chỉ còn ${event.available_tickets} vé`);
+          setBookingLoading(false);
+          return;
+        }
+
+        bookingData.quantity = quantity;
+      }
+
+      await bookingsAPI.create(bookingData);
+
+      alert('Đặt vé thành công!');
       navigate('/bookings');
     } catch (err) {
       setError(err.message || 'Đặt vé thất bại');
@@ -77,7 +135,6 @@ const BookingPage = () => {
 
   const eventDate = new Date(event.event_date).toLocaleDateString('vi-VN');
   const eventPrice = Number(event.price || 0);
-  const totalPrice = eventPrice * quantity;
   const isPastEvent = new Date(event.event_date) < new Date();
   const isSoldOut = event.available_tickets !== undefined && event.available_tickets <= 0;
 
@@ -89,7 +146,7 @@ const BookingPage = () => {
         <div className="event-summary">
           <h2>{event.title}</h2>
           <p><b>Ngày:</b> {eventDate}</p>
-          <p><b>Giá:</b> {eventPrice.toLocaleString('vi-VN')} VNĐ</p>
+          {!useTicketTypes && <p><b>Giá:</b> {eventPrice.toLocaleString('vi-VN')} VNĐ</p>}
           {event.available_tickets !== undefined && (
             <p><b>Vé còn lại:</b> {event.available_tickets}</p>
           )}
@@ -104,23 +161,64 @@ const BookingPage = () => {
         )}
 
         {!isPastEvent && !isSoldOut && (
-          <form onSubmit={handleBooking}>
+          <form onSubmit={handleBooking} className="booking-form">
             {error && <div className="error-message">{error}</div>}
             
-            <div className="form-group">
-              <label>Số lượng vé</label>
-              <input
-                type="number"
-                min="1"
-                max={event.available_tickets || 999}
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-              />
+            {useTicketTypes ? (
+              <div className="ticket-types-booking">
+                <h3>Chọn Loại Vé</h3>
+                {ticketTypes.map(ticketType => (
+                  <div key={ticketType.id} className="ticket-type-selection">
+                    <div className="ticket-info">
+                      <div className="ticket-header">
+                        <h4>{ticketType.name}</h4>
+                        <span className="ticket-price">
+                          {ticketType.price.toLocaleString('vi-VN')} VNĐ
+                        </span>
+                      </div>
+                      {ticketType.description && (
+                        <p className="ticket-description">{ticketType.description}</p>
+                      )}
+                      <span className="available">
+                        Còn lại: {ticketType.available_quantity}
+                      </span>
+                    </div>
+                    <div className="ticket-selector">
+                      <label>Số lượng:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max={ticketType.available_quantity}
+                        value={selectedTickets[ticketType.id] || 0}
+                        onChange={(e) =>
+                          handleTicketQuantityChange(ticketType.id, parseInt(e.target.value))
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="form-group">
+                <label>Số lượng vé</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={event.available_tickets || 999}
+                  value={quantity}
+                  onChange={(e) => setQuantity(Number(e.target.value))}
+                />
+              </div>
+            )}
+
+            <div className="price-summary">
+              {useTicketTypes && (
+                <p><b>Tổng vé:</b> {getTotalSelectedTickets()}</p>
+              )}
+              <p><b>Tổng tiền:</b> {getTotalCost().toLocaleString('vi-VN')} VNĐ</p>
             </div>
 
-            <p><b>Tổng tiền:</b> {totalPrice.toLocaleString('vi-VN')} VNĐ</p>
-
-            <button type="submit" disabled={bookingLoading}>
+            <button type="submit" disabled={bookingLoading} className="btn-booking">
               {bookingLoading ? 'Đang đặt vé...' : 'Đặt vé ngay'}
             </button>
           </form>

@@ -112,6 +112,141 @@
   cursor: not-allowed;
 }
 
+/* Ticket Types Booking */
+.ticket-types-booking {
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.ticket-types-booking h3 {
+  color: #2c3e50;
+  margin-bottom: 20px;
+  font-size: 18px;
+}
+
+.ticket-type-selection {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  gap: 20px;
+}
+
+.ticket-info {
+  flex: 1;
+}
+
+.ticket-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.ticket-header h4 {
+  margin: 0;
+  color: #34495e;
+  font-size: 16px;
+}
+
+.ticket-price {
+  background: #3498db;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ticket-description {
+  color: #7f8c8d;
+  font-size: 13px;
+  margin: 6px 0;
+  font-style: italic;
+}
+
+.available {
+  display: inline-block;
+  color: #27ae60;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ticket-selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 150px;
+}
+
+.ticket-selector label {
+  font-weight: 600;
+  color: #34495e;
+  margin: 0;
+}
+
+.ticket-selector input {
+  width: 70px;
+  padding: 8px 10px;
+  border: 1px solid #bdc3c7;
+  border-radius: 4px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.price-summary {
+  background: #ecf0f1;
+  padding: 15px;
+  border-radius: 6px;
+  margin: 20px 0;
+  border-left: 4px solid #3498db;
+}
+
+.price-summary p {
+  margin: 8px 0;
+  color: #2c3e50;
+  font-size: 15px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.price-summary p:last-child {
+  font-weight: bold;
+  color: #e74c3c;
+  font-size: 18px;
+  border-top: 1px solid #bdc3c7;
+  padding-top: 10px;
+  margin-top: 10px;
+}
+
+.btn-booking {
+  width: 100%;
+  padding: 15px;
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-booking:hover:not(:disabled) {
+  background-color: #229954;
+}
+
+.btn-booking:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 @media (max-width: 768px) {
   .booking-container {
     grid-template-columns: 1fr;
@@ -120,5 +255,20 @@
 
   .booking-page {
     padding: 20px;
+  }
+
+  .ticket-type-selection {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .ticket-selector {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .ticket-selector input {
+    width: 80px;
   }
 }

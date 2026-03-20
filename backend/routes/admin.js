@@ -347,4 +347,57 @@ router.get('/dashboard/stats', async (req, res) => {
   }
 });
 
+// ---------- contacts management for admins ----------
+router.get('/contacts', async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const { status = null } = req.query;
+    let query = 'SELECT c.*, u.username as user_username, u.email as user_email FROM contacts c LEFT JOIN users u ON c.user_id = u.id';
+    const params = [];
+    if (status) {
+      query += ' WHERE c.status = ?';
+      params.push(status);
+    }
+    query += ' ORDER BY c.created_at DESC';
+
+    const [contacts] = await db.query(query, params);
+    res.json({ contacts });
+  } catch (err) {
+    console.error('Get contacts error:', err);
+    res.status(500).json({ error: { message: 'Failed to fetch contacts', status: 500 } });
+  }
+});
+
+router.post('/contacts/:id/respond', async (req, res) => {
+  const db = req.app.locals.db;
+  const { response } = req.body;
+
+  if (!response || !response.trim()) {
+    return res.status(400).json({ error: { message: 'Response text is required', status: 400 } });
+  }
+
+  try {
+    const contactId = req.params.id;
+    const adminId = req.user.id;
+
+    const [rows] = await db.query('SELECT * FROM contacts WHERE id = ?', [contactId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: { message: 'Contact message not found', status: 404 } });
+    }
+
+    await db.query(
+      `UPDATE contacts
+       SET status = ?, admin_response = ?, responded_at = NOW(), responded_by = ?
+       WHERE id = ?`,
+      ['responded', response, adminId, contactId]
+    );
+
+    const [updated] = await db.query('SELECT * FROM contacts WHERE id = ?', [contactId]);
+    res.json({ message: 'Response saved', contact: updated[0] });
+  } catch (err) {
+    console.error('Respond to contact error:', err);
+    res.status(500).json({ error: { message: 'Failed to respond to contact', status: 500 } });
+  }
+});
+
 module.exports = router;

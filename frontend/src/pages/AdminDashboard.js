@@ -13,6 +13,10 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [selectedOrganizer, setSelectedOrganizer] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [pendingContacts, setPendingContacts] = useState([]);
+  const [respondedContacts, setRespondedContacts] = useState([]);
+  const [selectedContact, setSelectedContact] = useState(null);
+  const [adminResponse, setAdminResponse] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [activeSection, setActiveSection] = useState('organizers');
   const [activeTab, setActiveTab] = useState('pending');
@@ -30,13 +34,14 @@ const AdminDashboard = () => {
       setLoading(true);
       const token = localStorage.getItem('token');
 
-      // Fetch all organizers
       const [
         pendingRes,
         approvedRes,
         rejectedRes,
         pendingEventsRes,
-        statsRes
+        statsRes,
+        pendingContactsRes,
+        respondedContactsRes
       ] = await Promise.all([
         axios.get('http://localhost:5000/api/admin/organizers?status=pending', {
           headers: { Authorization: `Bearer ${token}` }
@@ -52,6 +57,12 @@ const AdminDashboard = () => {
         }),
         axios.get('http://localhost:5000/api/admin/dashboard/stats', {
           headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get('http://localhost:5000/api/admin/contacts?status=pending', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get('http://localhost:5000/api/admin/contacts?status=responded', {
+          headers: { Authorization: `Bearer ${token}` }
         })
       ]);
 
@@ -60,6 +71,8 @@ const AdminDashboard = () => {
       setRejectedOrganizers(rejectedRes.data.organizers || []);
       setPendingEvents(pendingEventsRes.data.events || []);
       setStats(statsRes.data.stats || {});
+      setPendingContacts(pendingContactsRes.data.contacts || []);
+      setRespondedContacts(respondedContactsRes.data.contacts || []);
       setLoading(false);
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -148,6 +161,29 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleRespondContact = async (contactId) => {
+    if (!adminResponse.trim()) {
+      alert('Vui lòng nhập nội dung phản hồi');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `http://localhost:5000/api/admin/contacts/${contactId}/respond`,
+        { response: adminResponse },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert('Phản hồi đã được gửi');
+      fetchData();
+      setSelectedContact(null);
+      setAdminResponse('');
+    } catch (err) {
+      console.error('Error responding to contact:', err);
+      alert('Không thể gửi phản hồi');
+    }
+  };
+
   if (loading) return <div className="admin-loading">Đang tải dữ liệu...</div>;
 
   const getActiveOrganizers = () => {
@@ -158,6 +194,17 @@ const AdminDashboard = () => {
         return approvedOrganizers;
       case 'rejected':
         return rejectedOrganizers;
+      default:
+        return [];
+    }
+  };
+
+  const getActiveContacts = () => {
+    switch (activeTab) {
+      case 'pending':
+        return pendingContacts;
+      case 'responded':
+        return respondedContacts;
       default:
         return [];
     }
@@ -204,9 +251,21 @@ const AdminDashboard = () => {
           </button>
           <button
             className={`section-tab ${activeSection === 'events' ? 'active' : ''}`}
-            onClick={() => setActiveSection('events')}
+            onClick={() => {
+              setActiveSection('events');
+              setActiveTab('pending');
+            }}
           >
              Sự Kiện
+          </button>
+          <button
+            className={`section-tab ${activeSection === 'contacts' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveSection('contacts');
+              setActiveTab('pending');
+            }}
+          >
+             Liên hệ
           </button>
         </div>
 
@@ -256,6 +315,49 @@ const AdminDashboard = () => {
                     <p className="org-email"> {org.email}</p>
                     <p className="org-phone"> {org.phone || 'Không có'}</p>
                     <p className="org-created"> {new Date(org.created_at).toLocaleDateString('vi-VN')}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        ) : activeSection === 'contacts' ? (
+          <>
+            <div className="admin-tabs">
+              <button
+                className={`tab-btn ${activeTab === 'pending' ? 'active' : ''}`}
+                onClick={() => setActiveTab('pending')}
+              >
+                 Chờ phản hồi ({pendingContacts.length})
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'responded' ? 'active' : ''}`}
+                onClick={() => setActiveTab('responded')}
+              >
+                 Đã phản hồi ({respondedContacts.length})
+              </button>
+            </div>
+
+            <div className="organizers-list">
+              {getActiveContacts().length === 0 ? (
+                <div className="empty-state">
+                  <p>Không có yêu cầu liên hệ</p>
+                </div>
+              ) : (
+                getActiveContacts().map(ct => (
+                  <div
+                    key={ct.id}
+                    className={`contact-card ${ct.status}`}
+                    onClick={() => setSelectedContact(ct)}
+                  >
+                    <div className="org-header">
+                      <h3>{ct.subject || 'Không có chủ đề'}</h3>
+                      <span className={`status-badge ${ct.status}`}>
+                        {ct.status === 'pending' && ' Chờ phản hồi'}
+                        {ct.status === 'responded' && ' Đã phản hồi'}
+                      </span>
+                    </div>
+                    <p className="org-email">{ct.email}</p>
+                    <p className="org-created">{new Date(ct.created_at).toLocaleDateString('vi-VN')}</p>
                   </div>
                 ))
               )}
@@ -382,6 +484,63 @@ const AdminDashboard = () => {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {selectedContact && (
+        <div className="modal-overlay" onClick={() => setSelectedContact(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <button
+              className="modal-close"
+              onClick={() => setSelectedContact(null)}
+            >
+              ✕
+            </button>
+            <h2>Yêu cầu liên hệ</h2>
+            <div className="org-details">
+              <div className="detail-row">
+                <label>Người gửi:</label>
+                <span>{selectedContact.name || 'Khách'}</span>
+              </div>
+              <div className="detail-row">
+                <label>Email:</label>
+                <span>{selectedContact.email}</span>
+              </div>
+              <div className="detail-row">
+                <label>Chủ đề:</label>
+                <span>{selectedContact.subject || 'Không có'}</span>
+              </div>
+              <div className="detail-row">
+                <label>Nội dung:</label>
+                <span>{selectedContact.message}</span>
+              </div>
+              <div className="detail-row">
+                <label>Gửi lúc:</label>
+                <span>{new Date(selectedContact.created_at).toLocaleString('vi-VN')}</span>
+              </div>
+              {selectedContact.status === 'responded' && (
+                <div className="detail-row">
+                  <label>Phản hồi:</label>
+                  <span>{selectedContact.admin_response}</span>
+                </div>
+              )}
+            </div>
+            {selectedContact.status === 'pending' && (
+              <div className="modal-actions">
+                <label>Phản hồi:</label>
+                <textarea
+                  value={adminResponse}
+                  onChange={(e) => setAdminResponse(e.target.value)}
+                />
+                <button
+                  className="btn btn-approve"
+                  onClick={() => handleRespondContact(selectedContact.id)}
+                >
+                  Gửi phản hồi
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

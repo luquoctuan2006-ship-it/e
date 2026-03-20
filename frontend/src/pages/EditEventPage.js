@@ -1,13 +1,12 @@
-
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { organizerAPI } from '../services/api';
-import TicketTypeManager from '../components/TicketTypeManager';
 import '../styles/CreateEventPage.css';
 
-const CreateEventPage = () => {
+const EditEventPage = () => {
   const navigate = useNavigate();
+  const { id: eventId } = useParams();
   const { user } = useAuth();
   
   const [formData, setFormData] = useState({
@@ -15,17 +14,14 @@ const CreateEventPage = () => {
     description: '',
     event_date: '',
     venue_id: '',
-    total_tickets: '',
     price: '',
     image_url: '',
     category_id: '',
-    organizer_id: user?.organizer_id || 4 // 
   });
   
   const [venues, setVenues] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [ticketTypes, setTicketTypes] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -36,26 +32,30 @@ const CreateEventPage = () => {
   }, [user, navigate]);
 
   useEffect(() => {
-    if (user) {
-      setFormData(prev => ({
-        ...prev,
-        organizer_id: 4
-      }));
-    }
-  }, [user]);
 
-  useEffect(() => {
-    fetchFormData();
-  }, []);
-
-  const fetchFormData = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
-      const [venuesRes, categoriesRes] = await Promise.all([
+      const [eventRes, venuesRes, categoriesRes] = await Promise.all([
+        organizerAPI.getEventDetails(eventId),
         organizerAPI.getVenues(),
         organizerAPI.getCategories()
       ]);
+
+      const event = eventRes.event;
       
+      const eventDate = new Date(event.event_date);
+      const formattedDate = eventDate.toISOString().slice(0, 16);
+
+      setFormData({
+        title: event.title || '',
+        description: event.description || '',
+        event_date: formattedDate,
+        venue_id: event.venue_id || '',
+        price: event.price || '',
+        image_url: event.image_url || '',
+        category_id: event.category_id || '',
+      });
 
       const venuesData = venuesRes?.venues || [
         { id: 1, name: 'Nhà hát Lớn Hà Nội', city: 'Hà Nội', capacity: 1000 },
@@ -74,6 +74,9 @@ const CreateEventPage = () => {
       setVenues(venuesData);
       setCategories(categoriesData);
     } catch (err) {
+      const errorMsg = err.message || 'Không thể tải thông tin sự kiện';
+      setError(errorMsg);
+      console.error('Error fetching event data:', err);
 
       setVenues([
         { id: 1, name: 'Nhà hát Lớn Hà Nội', city: 'Hà Nội', capacity: 1000 },
@@ -88,13 +91,13 @@ const CreateEventPage = () => {
         { id: 3, name: 'Acoustic' },
         { id: 4, name: 'Nhạc trẻ' }
       ]);
-      
-      setError('Không thể tải dữ liệu từ server. Đang sử dụng dữ liệu mẫu.');
-      console.error('Fetch form data error:', err);
     } finally {
       setLoading(false);
     }
   };
+    
+    fetchData();
+  }, [eventId]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -110,7 +113,6 @@ const CreateEventPage = () => {
     setError('');
 
     try {
-      
       if (!formData.title.trim()) {
         throw new Error('Vui lòng nhập tiêu đề sự kiện');
       }
@@ -119,9 +121,6 @@ const CreateEventPage = () => {
       }
       if (!formData.venue_id) {
         throw new Error('Vui lòng chọn địa điểm');
-      }
-      if (!formData.total_tickets || parseInt(formData.total_tickets) <= 0) {
-        throw new Error('Số lượng vé phải lớn hơn 0');
       }
       if (!formData.price || parseFloat(formData.price) < 0) {
         throw new Error('Giá vé không hợp lệ');
@@ -133,29 +132,25 @@ const CreateEventPage = () => {
         event_date: formData.event_date.replace('T', ' ') + ':00',
         venue_id: parseInt(formData.venue_id),
         category_id: formData.category_id ? parseInt(formData.category_id) : null,
-        organizer_id: 4,
-        total_tickets: parseInt(formData.total_tickets),
         price: parseFloat(formData.price),
-        image_url: formData.image_url || '',
-        ticket_types: ticketTypes.length > 0 ? ticketTypes : null
+        image_url: formData.image_url || ''
       };
 
-      console.log('=== DEBUG CREATE EVENT ===');
+      console.log('=== DEBUG UPDATE EVENT ===');
       console.log('Formatted data:', formattedData);
-      console.log('Stringified:', JSON.stringify(formattedData));
 
-      const response = await organizerAPI.createEvent(formattedData);
+      const response = await organizerAPI.updateEvent(eventId, formattedData);
       
       console.log('API Response:', response);
       
       if (response.message) {
-        alert('Tạo sự kiện thành công!\n\n Sự kiện của bạn đang chờ admin phê duyệt.\n\nBạn sẽ được thông báo khi sự kiện được phê duyệt.');
+        alert('Cập nhật sự kiện thành công!');
         navigate('/organizer/events');
       }
     } catch (err) {
-      const errorMsg = err.message || 'Có lỗi xảy ra khi tạo sự kiện';
+      const errorMsg = err.message || 'Có lỗi xảy ra khi cập nhật sự kiện';
       setError(errorMsg);
-      console.error(' Create event error details:', {
+      console.error('Update event error details:', {
         message: err.message,
         stack: err.stack,
         data: err.response?.data
@@ -175,7 +170,7 @@ const CreateEventPage = () => {
     return (
       <div className="loading-container">
         <div className="spinner"></div>
-        <p>Đang tải dữ liệu...</p>
+        <p>Đang tải thông tin sự kiện...</p>
       </div>
     );
   }
@@ -184,8 +179,8 @@ const CreateEventPage = () => {
     <div className="create-event-page">
       <div className="create-event-container">
         <div className="create-event-header">
-          <h1>Tạo Sự Kiện Mới</h1>
-          <p className="subtitle">Điền thông tin chi tiết về sự kiện của bạn</p>
+          <h1>Chỉnh Sửa Sự Kiện</h1>
+          <p className="subtitle">Cập nhật thông tin chi tiết về sự kiện của bạn</p>
         </div>
 
         {error && (
@@ -237,7 +232,6 @@ const CreateEventPage = () => {
                 name="event_date"
                 value={formData.event_date}
                 onChange={handleChange}
-                min={new Date().toISOString().slice(0, 16)}
                 required
               />
             </div>
@@ -265,24 +259,6 @@ const CreateEventPage = () => {
 
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="total_tickets" className="required">
-                Số lượng vé
-              </label>
-              <input
-                type="number"
-                id="total_tickets"
-                name="total_tickets"
-                value={formData.total_tickets}
-                onChange={handleChange}
-                min="1"
-                max="100000"
-                placeholder="1000"
-                required
-              />
-              <small className="form-hint">Số vé tối đa có thể bán</small>
-            </div>
-
-            <div className="form-group">
               <label htmlFor="price" className="required">
                 Giá vé (VND)
               </label>
@@ -302,9 +278,7 @@ const CreateEventPage = () => {
               </div>
               <small className="form-hint">Nhập 0 nếu miễn phí</small>
             </div>
-          </div>
 
-          <div className="form-row">
             <div className="form-group">
               <label htmlFor="category_id">
                 Danh mục
@@ -323,21 +297,21 @@ const CreateEventPage = () => {
                 ))}
               </select>
             </div>
+          </div>
 
-            <div className="form-group">
-              <label htmlFor="image_url">
-                URL hình ảnh
-              </label>
-              <input
-                type="url"
-                id="image_url"
-                name="image_url"
-                value={formData.image_url}
-                onChange={handleChange}
-                placeholder="https://example.com/event-image.jpg"
-              />
-              <small className="form-hint">URL ảnh đại diện cho sự kiện</small>
-            </div>
+          <div className="form-group">
+            <label htmlFor="image_url">
+              URL hình ảnh
+            </label>
+            <input
+              type="url"
+              id="image_url"
+              name="image_url"
+              value={formData.image_url}
+              onChange={handleChange}
+              placeholder="https://example.com/event-image.jpg"
+            />
+            <small className="form-hint">URL ảnh đại diện cho sự kiện</small>
           </div>
 
           {formData.image_url && (
@@ -352,13 +326,6 @@ const CreateEventPage = () => {
               </div>
             </div>
           )}
-
-          <TicketTypeManager 
-            ticketTypes={ticketTypes}
-            onTicketTypesChange={setTicketTypes}
-            eventPrice={parseFloat(formData.price) || 0}
-            totalTickets={parseInt(formData.total_tickets) || 0}
-          />
 
           <div className="form-actions">
             <button
@@ -380,7 +347,7 @@ const CreateEventPage = () => {
                   Đang xử lý...
                 </>
               ) : (
-                'Tạo Sự Kiện'
+                'Cập Nhật Sự Kiện'
               )}
             </button>
           </div>
@@ -390,4 +357,4 @@ const CreateEventPage = () => {
   );
 };
 
-export default CreateEventPage;
+export default EditEventPage;

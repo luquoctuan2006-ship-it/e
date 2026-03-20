@@ -130,16 +130,10 @@ const OrganizerEventsPage = () => {
                     </td>
                     <td className="actions">
                       <button 
-                        className="btn btn-small btn-view"
-                        onClick={() => navigate(`/events/${event.id}`)}
-                      >
-                        👁️ Xem
-                      </button>
-                      <button 
                         className="btn btn-small btn-edit"
                         onClick={() => navigate(`/organizer/edit-event/${event.id}`)}
                       >
-                        ✏️ Sửa
+                        Sửa
                       </button>
                     </td>
                   </tr>

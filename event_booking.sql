@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Mar 11, 2026 at 02:15 AM
+-- Generation Time: Mar 20, 2026 at 05:02 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -32,12 +32,9 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `GetEventStatistics` (IN `event_id_p
         e.available_tickets,
         (e.total_tickets - e.available_tickets) as sold_tickets,
         COALESCE(SUM(b.total_price), 0) as total_revenue,
-        COUNT(DISTINCT b.id) as total_bookings,
-        COALESCE(AVG(r.rating), 0) as avg_rating,
-        COUNT(DISTINCT r.id) as total_reviews
+        COUNT(DISTINCT b.id) as total_bookings
     FROM events e
     LEFT JOIN bookings b ON e.id = b.event_id AND b.status = 'confirmed'
-    LEFT JOIN reviews r ON e.id = r.event_id
     WHERE e.id = event_id_param
     GROUP BY e.id;
 END$$
@@ -53,17 +50,10 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `GetUserBookingHistory` (IN `user_id
         e.event_date,
         e.image_url,
         v.name as venue_name,
-        v.city,
-        p.payment_method,
-        p.status as payment_status,
-        p.transaction_code,
-        tt.name as ticket_type_name,
-        tt.price as ticket_type_price
+        v.city
     FROM bookings b
     JOIN events e ON b.event_id = e.id
     JOIN venues v ON e.venue_id = v.id
-    LEFT JOIN ticket_types tt ON b.ticket_type_id = tt.id
-    LEFT JOIN payments p ON b.id = p.booking_id
     WHERE b.user_id = user_id_param
     ORDER BY b.booking_date DESC;
 END$$
@@ -80,25 +70,22 @@ CREATE TABLE `bookings` (
   `id` int(11) NOT NULL,
   `user_id` int(11) NOT NULL,
   `event_id` int(11) NOT NULL,
-  `ticket_type_id` int(11) DEFAULT NULL,
   `quantity` int(11) NOT NULL,
   `total_price` decimal(10,2) NOT NULL,
   `booking_date` timestamp NOT NULL DEFAULT current_timestamp(),
-  `status` enum('confirmed','cancelled','pending') DEFAULT 'pending'
+  `status` enum('confirmed','cancelled','pending','approved') DEFAULT 'pending',
+  `seats` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`seats`)),
+  `approved_at` timestamp NULL DEFAULT NULL,
+  `approved_by` int(11) DEFAULT NULL,
+  `notes` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `bookings`
 --
 
-INSERT INTO `bookings` (`id`, `user_id`, `event_id`, `ticket_type_id`, `quantity`, `total_price`, `booking_date`, `status`) VALUES
-(1, 2, 1, NULL, 2, 1000000.00, '2025-01-10 07:30:00', 'confirmed'),
-(2, 2, 3, NULL, 1, 200000.00, '2025-01-11 03:15:00', 'confirmed'),
-(3, 3, 2, NULL, 4, 3200000.00, '2025-01-09 09:45:00', 'pending'),
-(4, 3, 4, NULL, 2, 1200000.00, '2025-01-12 02:20:00', 'confirmed'),
-(5, 4, 1, NULL, 1, 500000.00, '2025-01-08 04:00:00', 'cancelled'),
-(6, 4, 8, NULL, 3, 3600000.00, '2025-01-11 08:30:00', 'confirmed'),
-(7, 5, 3, NULL, 2, 400000.00, '2025-01-10 06:45:00', 'confirmed');
+INSERT INTO `bookings` (`id`, `user_id`, `event_id`, `quantity`, `total_price`, `booking_date`, `status`, `seats`, `approved_at`, `approved_by`, `notes`) VALUES
+(16, 7, 16, 1, 2000.00, '2026-03-12 09:26:07', 'approved', '[\"A3\"]', '2026-03-12 09:26:48', 11, 'NGU');
 
 --
 -- Triggers `bookings`
@@ -108,36 +95,6 @@ CREATE TRIGGER `after_booking_insert` AFTER INSERT ON `bookings` FOR EACH ROW BE
     UPDATE events 
     SET updated_at = CURRENT_TIMESTAMP 
     WHERE id = NEW.event_id;
-END
-$$
-DELIMITER ;
-DELIMITER $$
-CREATE TRIGGER `after_booking_insert_ticket` AFTER INSERT ON `bookings` FOR EACH ROW BEGIN
-    IF NEW.ticket_type_id IS NOT NULL THEN
-        UPDATE ticket_types 
-        SET available_tickets = available_tickets - NEW.quantity
-        WHERE id = NEW.ticket_type_id;
-    ELSE
-        UPDATE events 
-        SET available_tickets = available_tickets - NEW.quantity
-        WHERE id = NEW.event_id;
-    END IF;
-END
-$$
-DELIMITER ;
-DELIMITER $$
-CREATE TRIGGER `after_booking_update_ticket` AFTER UPDATE ON `bookings` FOR EACH ROW BEGIN
-    IF OLD.status != 'cancelled' AND NEW.status = 'cancelled' THEN
-        IF NEW.ticket_type_id IS NOT NULL THEN
-            UPDATE ticket_types 
-            SET available_tickets = available_tickets + NEW.quantity
-            WHERE id = NEW.ticket_type_id;
-        ELSE
-            UPDATE events 
-            SET available_tickets = available_tickets + NEW.quantity
-            WHERE id = NEW.event_id;
-        END IF;
-    END IF;
 END
 $$
 DELIMITER ;
@@ -168,6 +125,34 @@ INSERT INTO `categories` (`id`, `name`, `slug`, `description`, `created_at`) VAL
 (5, 'Nhạc cổ điển', 'nhac-co-dien', 'Hòa nhạc giao hưởng và nhạc cổ điển', '2026-01-12 00:10:38'),
 (6, 'Rock', 'rock', 'Nhạc rock và metal', '2026-01-12 00:10:38'),
 (7, 'Jazz', 'jazz', 'Nhạc jazz và blues', '2026-01-12 00:10:38');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `contacts`
+--
+
+CREATE TABLE `contacts` (
+  `id` int(11) NOT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `name` varchar(255) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `subject` varchar(255) DEFAULT NULL,
+  `message` text NOT NULL,
+  `status` enum('pending','responded') DEFAULT 'pending',
+  `admin_response` text DEFAULT NULL,
+  `responded_at` timestamp NULL DEFAULT NULL,
+  `responded_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `contacts`
+--
+
+INSERT INTO `contacts` (`id`, `user_id`, `name`, `email`, `subject`, `message`, `status`, `admin_response`, `responded_at`, `responded_by`, `created_at`) VALUES
+(1, 2, 'Nguyễn Văn A', 'user1@example.com', 'Cần trợ giúp', 'Tôi gặp vấn đề khi đặt vé.', 'pending', NULL, NULL, NULL, '2026-03-12 03:00:00'),
+(3, 7, 'tu', 'tu@example.local', 'g', 't', 'responded', 'de', '2026-03-12 02:01:37', 1, '2026-03-12 02:00:54');
 
 -- --------------------------------------------------------
 
@@ -212,7 +197,9 @@ INSERT INTO `events` (`id`, `title`, `description`, `event_date`, `venue_id`, `t
 (10, 'Piano Concert - Chopin Masterpieces', 'Đêm nhạc piano solo với các tác phẩm kinh điển của Chopin. Nghệ sĩ piano quốc tế biểu diễn.', '2025-10-15 19:30:00', 1, 400, 400, 550000.00, 'https://images.unsplash.com/photo-1520523839897-bd0b52f945a0', 5, 2, 'approved', '2026-01-12 00:10:39', NULL, NULL, '2026-01-12 00:10:39', '2026-03-05 11:20:16'),
 (11, 'hom ay', 'th', '2026-07-07 14:02:00', 5, 1, 1, 0.00, NULL, 2, 4, 'approved', '2026-03-05 11:25:15', 1, NULL, '2026-03-05 11:24:56', '2026-03-05 11:25:15'),
 (12, 't', 't', '2026-09-09 14:22:00', 5, 123, 123, 0.00, NULL, 2, 4, 'approved', '2026-03-10 19:01:25', 1, NULL, '2026-03-10 19:00:42', '2026-03-10 19:01:25'),
-(13, 'ty', 'ty', '2026-06-06 14:22:00', 1, 6, 6, 0.00, NULL, 2, 6, 'approved', '2026-03-10 19:51:16', 1, NULL, '2026-03-10 19:50:58', '2026-03-10 19:51:16');
+(13, 'ty', 'ty', '2026-06-06 14:22:00', 1, 6, 5, 0.00, NULL, 2, 6, 'approved', '2026-03-10 19:51:16', 1, NULL, '2026-03-10 19:50:58', '2026-03-12 02:55:15'),
+(14, 'yt', '2', '2026-07-07 10:54:00', 3, 6, 6, 1000.00, NULL, 1, 7, 'approved', '2026-03-12 08:49:26', 1, NULL, '2026-03-12 08:48:34', '2026-03-12 08:51:35'),
+(16, 'tuab', NULL, '2026-09-09 19:07:00', 4, 15, 15, 0.00, NULL, 5, 7, 'approved', '2026-03-12 09:09:21', 1, NULL, '2026-03-12 09:08:03', '2026-03-12 09:26:07');
 
 --
 -- Triggers `events`
@@ -260,6 +247,52 @@ INSERT INTO `organizers` (`id`, `name`, `email`, `phone`, `description`, `websit
 (4, 'Vietnam Music Entertainment', 'info@vme.vn', '1900 5678', 'Công ty giải trí và tổ chức sự kiện âm nhạc', 'https://vme.vn', 'https://vme.vn/logo.png', 'approved', '2026-01-12 00:10:39', NULL, NULL, '2026-01-12 00:10:39', NULL),
 (6, 'tuantienti', 'tuantienti@example.local', '123', NULL, 'https://tuan.vn', NULL, 'approved', '2026-03-10 18:31:59', NULL, 1, '2026-03-10 18:30:59', 13),
 (7, 'tinh', 'tinh@example.local', NULL, NULL, NULL, NULL, 'approved', '2026-03-11 00:26:11', NULL, 1, '2026-03-10 19:46:38', 11);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `ticket_bookings`
+--
+
+CREATE TABLE `ticket_bookings` (
+  `id` int(11) NOT NULL,
+  `booking_id` int(11) NOT NULL,
+  `ticket_type_id` int(11) NOT NULL,
+  `quantity` int(11) NOT NULL,
+  `price_per_ticket` decimal(10,2) NOT NULL,
+  `subtotal` decimal(10,2) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `ticket_bookings`
+--
+
+INSERT INTO `ticket_bookings` (`id`, `booking_id`, `ticket_type_id`, `quantity`, `price_per_ticket`, `subtotal`) VALUES
+(2, 16, 1, 1, 2000.00, 2000.00);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `ticket_types`
+--
+
+CREATE TABLE `ticket_types` (
+  `id` int(11) NOT NULL,
+  `event_id` int(11) NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `description` text DEFAULT NULL,
+  `price` decimal(10,2) NOT NULL,
+  `quantity` int(11) NOT NULL,
+  `available_quantity` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `ticket_types`
+--
+
+INSERT INTO `ticket_types` (`id`, `event_id`, `name`, `description`, `price`, `quantity`, `available_quantity`, `created_at`) VALUES
+(1, 16, 'vip', NULL, 2000.00, 5, 2, '2026-03-12 09:08:03');
 
 -- --------------------------------------------------------
 
@@ -322,24 +355,6 @@ INSERT INTO `venues` (`id`, `name`, `address`, `city`, `capacity`, `amenities`, 
 (4, 'Nhà Văn Hóa Thanh Niên TP.HCM', 'Số 4 Phạm Ngọc Thạch, Quận 1', 'TP.HCM', 2000, 'Máy lạnh, Sân khấu hiện đại', 'https://maps.google.com/nha-van-hoa-thanh-nien', '028 3822 5678', '2026-01-12 00:10:38'),
 (5, 'Cung Văn Hóa Lao Động', 'Số 55 Nguyễn Du, Hai Bà Trưng', 'Hà Nội', 800, 'Hội trường lớn, Âm thanh chuyên nghiệp', 'https://maps.google.com/cung-van-hoa-lao-dong', '024 3943 3736', '2026-01-12 00:10:38');
 
--- --------------------------------------------------------
-
---
--- Stand-in structure for view `view_event_details`
--- (See below for the actual view)
---
-CREATE TABLE `view_event_details` (
-);
-
--- --------------------------------------------------------
-
---
--- Structure for view `view_event_details`
---
-DROP TABLE IF EXISTS `view_event_details`;
-
-CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `view_event_details`  AS SELECT `e`.`id` AS `id`, `e`.`title` AS `title`, `e`.`description` AS `description`, `e`.`event_date` AS `event_date`, `e`.`total_tickets` AS `total_tickets`, `e`.`available_tickets` AS `available_tickets`, `e`.`price` AS `price`, `e`.`image_url` AS `image_url`, `e`.`status` AS `status`, `v`.`name` AS `venue_name`, `v`.`address` AS `venue_address`, `v`.`city` AS `city`, `c`.`name` AS `category_name`, `c`.`slug` AS `category_slug`, `o`.`name` AS `organizer_name`, coalesce(avg(`r`.`rating`),0) AS `avg_rating`, count(distinct `r`.`id`) AS `review_count`, count(distinct `b`.`id`) AS `booking_count`, `e`.`created_at` AS `created_at`, `e`.`updated_at` AS `updated_at` FROM (((((`events` `e` left join `venues` `v` on(`e`.`venue_id` = `v`.`id`)) left join `categories` `c` on(`e`.`category_id` = `c`.`id`)) left join `organizers` `o` on(`e`.`organizer_id` = `o`.`id`)) left join `reviews` `r` on(`e`.`id` = `r`.`event_id`)) left join `bookings` `b` on(`e`.`id` = `b`.`event_id` and `b`.`status` = 'confirmed')) GROUP BY `e`.`id` ;
-
 --
 -- Indexes for dumped tables
 --
@@ -349,47 +364,62 @@ CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW 
 --
 ALTER TABLE `bookings`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_bookings_user` (`user_id`),
-  ADD KEY `idx_bookings_event` (`event_id`),
-  ADD KEY `idx_bookings_status` (`status`),
-  ADD KEY `idx_ticket_type` (`ticket_type_id`);
+  ADD KEY `fk_bookings_user` (`user_id`),
+  ADD KEY `fk_bookings_event` (`event_id`),
+  ADD KEY `fk_bookings_approved_by` (`approved_by`);
 
 --
 -- Indexes for table `categories`
 --
 ALTER TABLE `categories`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `contacts`
+--
+ALTER TABLE `contacts`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `slug` (`slug`),
-  ADD KEY `idx_categories_slug` (`slug`);
+  ADD KEY `fk_contacts_user` (`user_id`),
+  ADD KEY `fk_contacts_responded_by` (`responded_by`);
 
 --
 -- Indexes for table `events`
 --
 ALTER TABLE `events`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_events_date` (`event_date`),
-  ADD KEY `idx_events_venue` (`venue_id`),
-  ADD KEY `idx_events_category` (`category_id`),
-  ADD KEY `idx_events_organizer` (`organizer_id`),
-  ADD KEY `idx_events_status` (`status`);
+  ADD KEY `fk_events_venue` (`venue_id`),
+  ADD KEY `fk_events_category` (`category_id`),
+  ADD KEY `fk_events_organizer` (`organizer_id`),
+  ADD KEY `fk_events_approved_by` (`approved_by`);
 
 --
 -- Indexes for table `organizers`
 --
 ALTER TABLE `organizers`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `user_id` (`user_id`),
-  ADD KEY `idx_organizers_approval_status` (`approval_status`);
+  ADD KEY `fk_organizers_user` (`user_id`),
+  ADD KEY `fk_organizers_approved_by` (`approved_by`);
+
+--
+-- Indexes for table `ticket_bookings`
+--
+ALTER TABLE `ticket_bookings`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `booking_id` (`booking_id`),
+  ADD KEY `ticket_type_id` (`ticket_type_id`);
+
+--
+-- Indexes for table `ticket_types`
+--
+ALTER TABLE `ticket_types`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `event_id` (`event_id`);
 
 --
 -- Indexes for table `users`
 --
 ALTER TABLE `users`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `username` (`username`),
-  ADD UNIQUE KEY `email` (`email`),
-  ADD KEY `idx_users_email` (`email`),
-  ADD KEY `idx_users_username` (`username`);
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `venues`
@@ -405,37 +435,31 @@ ALTER TABLE `venues`
 -- AUTO_INCREMENT for table `bookings`
 --
 ALTER TABLE `bookings`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
--- AUTO_INCREMENT for table `categories`
+-- AUTO_INCREMENT for table `contacts`
 --
-ALTER TABLE `categories`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+ALTER TABLE `contacts`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `events`
 --
 ALTER TABLE `events`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
 
 --
--- AUTO_INCREMENT for table `organizers`
+-- AUTO_INCREMENT for table `ticket_bookings`
 --
-ALTER TABLE `organizers`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+ALTER TABLE `ticket_bookings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
--- AUTO_INCREMENT for table `users`
+-- AUTO_INCREMENT for table `ticket_types`
 --
-ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
-
---
--- AUTO_INCREMENT for table `venues`
---
-ALTER TABLE `venues`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+ALTER TABLE `ticket_types`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- Constraints for dumped tables
@@ -445,23 +469,45 @@ ALTER TABLE `venues`
 -- Constraints for table `bookings`
 --
 ALTER TABLE `bookings`
-  ADD CONSTRAINT `bookings_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `bookings_ibfk_2` FOREIGN KEY (`event_id`) REFERENCES `events` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `fk_bookings_ticket_type` FOREIGN KEY (`ticket_type_id`) REFERENCES `ticket_types` (`id`) ON DELETE SET NULL;
+  ADD CONSTRAINT `fk_bookings_approved_by` FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_bookings_event` FOREIGN KEY (`event_id`) REFERENCES `events` (`id`) ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_bookings_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON UPDATE CASCADE;
+
+--
+-- Constraints for table `contacts`
+--
+ALTER TABLE `contacts`
+  ADD CONSTRAINT `fk_contacts_responded_by` FOREIGN KEY (`responded_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_contacts_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 --
 -- Constraints for table `events`
 --
 ALTER TABLE `events`
-  ADD CONSTRAINT `events_ibfk_1` FOREIGN KEY (`venue_id`) REFERENCES `venues` (`id`),
-  ADD CONSTRAINT `events_ibfk_2` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE SET NULL,
-  ADD CONSTRAINT `events_ibfk_3` FOREIGN KEY (`organizer_id`) REFERENCES `organizers` (`id`) ON DELETE SET NULL;
+  ADD CONSTRAINT `fk_events_approved_by` FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_events_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_events_organizer` FOREIGN KEY (`organizer_id`) REFERENCES `organizers` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_events_venue` FOREIGN KEY (`venue_id`) REFERENCES `venues` (`id`) ON UPDATE CASCADE;
 
 --
 -- Constraints for table `organizers`
 --
 ALTER TABLE `organizers`
-  ADD CONSTRAINT `organizers_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `fk_organizers_approved_by` FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_organizers_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+--
+-- Constraints for table `ticket_bookings`
+--
+ALTER TABLE `ticket_bookings`
+  ADD CONSTRAINT `ticket_bookings_ibfk_1` FOREIGN KEY (`booking_id`) REFERENCES `bookings` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `ticket_bookings_ibfk_2` FOREIGN KEY (`ticket_type_id`) REFERENCES `ticket_types` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `ticket_types`
+--
+ALTER TABLE `ticket_types`
+  ADD CONSTRAINT `ticket_types_ibfk_1` FOREIGN KEY (`event_id`) REFERENCES `events` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

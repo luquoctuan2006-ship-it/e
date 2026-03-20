@@ -12,8 +12,11 @@ import EventDetailPage from './pages/EventDetailPage';
 import BookingPage from './pages/BookingPage';
 import BookingsPage from './pages/BookingsPage';
 import CreateEventPage from './pages/CreateEventPage';
+import EditEventPage from './pages/EditEventPage';
 import OrganizerEventsPage from './pages/OrganizerEventsPage';
+import OrganizerBookingsPage from './pages/OrganizerBookingsPage';
 import AdminDashboard from './pages/AdminDashboard';
+import ContactPage from './pages/ContactPage';
 
 
 import './App.css';
@@ -69,7 +72,7 @@ function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/events/:id" element={<EventDetailPage />} />
-              
+              <Route path="/contact" element={<ContactPage />} />
               
               <Route 
                 path="/booking/:id" 
@@ -97,12 +100,30 @@ function App() {
                   </OrganizerRoute>
                 } 
               />
+
+              <Route 
+                path="/organizer/bookings" 
+                element={
+                  <OrganizerRoute>
+                    <OrganizerBookingsPage />
+                  </OrganizerRoute>
+                } 
+              />
               
               <Route 
                 path="/organizer/create-event" 
                 element={
                   <OrganizerRoute>
                     <CreateEventPage />
+                  </OrganizerRoute>
+                } 
+              />
+
+              <Route 
+                path="/organizer/edit-event/:id" 
+                element={
+                  <OrganizerRoute>
+                    <EditEventPage />
                   </OrganizerRoute>
                 } 
               />

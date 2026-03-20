@@ -10,18 +10,24 @@ return (
   <nav className="navbar">
     <div className="nav-container">
       <Link to="/" className="nav-logo">
-         EventBooking
+         eventbooking
       </Link>
 
-      
-      <ul className="nav-menu">
-        {isAuthenticated && user?.role === "user" && (
-        <li className="nav-item">
-          <Link to="/" className="nav-link">
-            Trang chủ
-          </Link>
-        </li>
-        )}
+<ul className="nav-menu">
+ {isAuthenticated && user?.role !== "admin" && (
+    <li className="nav-item">
+     <Link to="/contact" className="nav-link">
+        Liên hệ
+      </Link>
+    </li>
+  )}
+  {isAuthenticated && user?.role === "user" && (
+    <li className="nav-item">
+      <Link to="/" className="nav-link">
+        Trang chủ
+      </Link>
+    </li>
+  )}
         {isAuthenticated && (
           <>
             {user?.role === "user" && (
@@ -45,6 +51,11 @@ return (
                 <li className="nav-item">
                   <Link to="/organizer/events" className="nav-link">
                     Quản lý Sự kiện
+                  </Link>
+                </li>
+                <li className="nav-item">
+                  <Link to="/organizer/bookings" className="nav-link">
+                    Quản lý Đặt vé
                   </Link>
                 </li>
               </>

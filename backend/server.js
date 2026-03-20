@@ -39,6 +39,7 @@ const categoryRoutes = require('./routes/categories');
 const organizerRoutes = require('./routes/organizers');
 const userRoutes = require('./routes/users');
 const adminRoutes = require('./routes/admin');
+const contactRoutes = require('./routes/contacts');
 
 
 app.use('/api/auth', authRoutes);
@@ -48,6 +49,7 @@ app.use('/api/venues', venueRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/organizers', organizerRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/contacts', contactRoutes);
 app.use('/api/admin', adminRoutes);
 
 

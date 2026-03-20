@@ -67,10 +67,32 @@ export const organizerAPI = {
     const query = new URLSearchParams(params).toString();
     return apiCall(`/events/organizer/my-events?${query}`);
   },
+
+  getEventDetails: (id) => apiCall(`/events/organizer/details/${id}`),
+
+  updateEvent: (id, eventData) =>
+    apiCall(`/events/organizer/update/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(eventData),
+    }),
  
   getVenues: () => apiCall('/events/venues/list'),
   
   getCategories: () => apiCall('/events/categories/list'),
+
+  getEventBookings: (eventId) =>
+    apiCall(`/bookings/organizer/event/${eventId}`),
+
+  approveBooking: (bookingId, approvalData) =>
+    apiCall(`/bookings/${bookingId}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify(approvalData),
+    }),
+
+  rejectBooking: (bookingId) =>
+    apiCall(`/bookings/${bookingId}/reject`, {
+      method: 'PUT',
+    }),
 };
 
 export const authAPI = {
@@ -115,6 +137,13 @@ export const eventsAPI = {
     apiCall(`/events/${id}`, {
       method: 'DELETE',
     }),
+  getTicketTypes: (eventId) =>
+    apiCall(`/events/${eventId}/ticket-types`),
+  createTicketType: (eventId, ticketData) =>
+    apiCall(`/events/${eventId}/ticket-types`, {
+      method: 'POST',
+      body: JSON.stringify(ticketData),
+    }),
 };
 
 export const bookingsAPI = {
@@ -133,8 +162,8 @@ export const bookingsAPI = {
       body: JSON.stringify(bookingData),
     }),
   cancel: (id) =>
-    apiCall(`/bookings/${id}`, {
-      method: 'DELETE',
+    apiCall(`/bookings/${id}/cancel`, {
+      method: 'PUT',
     }),
 };
 
@@ -156,6 +185,27 @@ export const usersAPI = {
     apiCall('/users/profile', {
       method: 'PUT',
       body: JSON.stringify(userData),
+    }),
+};
+
+export const contactAPI = {
+  send: (data) =>
+    apiCall('/contacts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getMine: () => apiCall('/contacts/me'),
+};
+
+export const adminAPI = {
+  getContacts: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiCall(`/admin/contacts?${query}`);
+  },
+  respondContact: (id, response) =>
+    apiCall(`/admin/contacts/${id}/respond`, {
+      method: 'POST',
+      body: JSON.stringify({ response }),
     }),
 };
 
