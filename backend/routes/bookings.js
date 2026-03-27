@@ -17,7 +17,6 @@ router.get('/my-bookings', verifyToken, async (req, res) => {
       JOIN venues v ON e.venue_id = v.id
       WHERE b.user_id = ?
     `;
-    
     const params = [req.user.id];
 
     if (status) {
@@ -31,37 +30,23 @@ router.get('/my-bookings', verifyToken, async (req, res) => {
 
     const [bookings] = await db.query(query, params);
 
-    // Fetch ticket details for each booking
     const bookingsWithDetails = await Promise.all(
       bookings.map(async (booking) => {
         const [ticketDetails] = await db.query(`
-          SELECT 
-            tb.id,
-            tb.ticket_type_id,
-            tb.quantity,
-            tb.price_per_ticket,
-            tb.subtotal,
-            tt.name as ticket_type_name
+          SELECT tb.id, tb.ticket_type_id, tb.quantity, tb.price_per_ticket, tb.subtotal,
+                 tt.name as ticket_type_name
           FROM ticket_bookings tb
           JOIN ticket_types tt ON tb.ticket_type_id = tt.id
           WHERE tb.booking_id = ?
         `, [booking.id]);
 
-        // Parse seats if they are JSON
         let seats = booking.seats;
         if (seats) {
-          try {
-            seats = typeof seats === 'string' ? JSON.parse(seats) : seats;
-          } catch (e) {
-            seats = null;
-          }
+          try { seats = typeof seats === 'string' ? JSON.parse(seats) : seats; }
+          catch (e) { seats = null; }
         }
 
-        return {
-          ...booking,
-          seats,
-          ticket_details: ticketDetails
-        };
+        return { ...booking, seats, ticket_details: ticketDetails };
       })
     );
 
@@ -88,39 +73,30 @@ router.get('/my-bookings', verifyToken, async (req, res) => {
     res.status(500).json({ error: { message: 'Failed to fetch bookings', status: 500 } });
   }
 });
+
 router.get('/', verifyToken, isAdmin, async (req, res) => {
   const db = req.app.locals.db;
   const { status, event_id, page = 1, limit = 20 } = req.query;
 
   try {
     let query = `
-      SELECT b.*, 
-             u.username, u.email, u.full_name,
+      SELECT b.*, u.username, u.email, u.full_name,
              e.title as event_title, e.event_date
       FROM bookings b
       JOIN users u ON b.user_id = u.id
       JOIN events e ON b.event_id = e.id
       WHERE 1=1
     `;
-    
     const params = [];
 
-    if (status) {
-      query += ' AND b.status = ?';
-      params.push(status);
-    }
-
-    if (event_id) {
-      query += ' AND b.event_id = ?';
-      params.push(event_id);
-    }
+    if (status) { query += ' AND b.status = ?'; params.push(status); }
+    if (event_id) { query += ' AND b.event_id = ?'; params.push(event_id); }
 
     query += ' ORDER BY b.booking_date DESC LIMIT ? OFFSET ?';
     const offset = (parseInt(page) - 1) * parseInt(limit);
     params.push(parseInt(limit), offset);
 
     const [bookings] = await db.query(query, params);
-
     res.json({ bookings });
   } catch (err) {
     console.error('Get all bookings error:', err);
@@ -134,10 +110,11 @@ router.get('/:id', verifyToken, async (req, res) => {
 
   try {
     const [bookings] = await db.query(`
-      SELECT b.*, 
+      SELECT b.*,
              u.username, u.email, u.full_name, u.phone,
-             e.title as event_title, e.description as event_description, e.event_date, e.image_url as event_image,
-             v.name as venue_name, v.address as venue_address, v.city, v.map_url,
+             e.title as event_title, e.description as event_description,
+             e.event_date, e.image_url as event_image,
+             v.name as venue_name, v.address as venue_address, v.city, v.map_url
       FROM bookings b
       JOIN users u ON b.user_id = u.id
       JOIN events e ON b.event_id = e.id
@@ -167,7 +144,7 @@ router.post('/', verifyToken, async (req, res) => {
   const { event_id, quantity, ticket_details } = req.body;
 
   const connection = await db.getConnection();
-  
+
   try {
     await connection.beginTransaction();
 
@@ -177,7 +154,6 @@ router.post('/', verifyToken, async (req, res) => {
     }
 
     const [events] = await connection.query(
-      // allow booking when admin has approved the event (status may be 'approved' or 'active')
       'SELECT * FROM events WHERE id = ? AND status IN ("approved","active") FOR UPDATE',
       [event_id]
     );
@@ -186,7 +162,9 @@ router.post('/', verifyToken, async (req, res) => {
       await connection.rollback();
       return res.status(404).json({ error: { message: 'Event not found or not available for booking', status: 404 } });
     }
+
     const event = events[0];
+
     if (new Date(event.event_date) < new Date()) {
       await connection.rollback();
       return res.status(400).json({ error: { message: 'Cannot book past events', status: 400 } });
@@ -196,7 +174,6 @@ router.post('/', verifyToken, async (req, res) => {
     let total_quantity = 0;
 
     if (ticket_details && Array.isArray(ticket_details) && ticket_details.length > 0) {
-      // Booking with ticket types
       for (const detail of ticket_details) {
         const { ticket_type_id, quantity: ticketQty } = detail;
 
@@ -216,13 +193,11 @@ router.post('/', verifyToken, async (req, res) => {
         }
 
         const ticketType = ticketTypes[0];
+
         if (ticketType.available_quantity < ticketQty) {
           await connection.rollback();
           return res.status(400).json({
-            error: {
-              message: `Only ${ticketType.available_quantity} tickets of type "${ticketType.name}" available`,
-              status: 400
-            }
+            error: { message: 'not enough tickets', status: 400 }
           });
         }
 
@@ -235,15 +210,10 @@ router.post('/', verifyToken, async (req, res) => {
         );
       }
     } else if (quantity && quantity >= 1) {
-      // Regular booking without ticket types
       if (event.available_tickets < quantity) {
         await connection.rollback();
         return res.status(400).json({
-          error: {
-            message: `Only ${event.available_tickets} tickets available`,
-            status: 400,
-            available: event.available_tickets
-          }
+          error: { message: 'not enough tickets', status: 400 }
         });
       }
 
@@ -264,7 +234,6 @@ router.post('/', verifyToken, async (req, res) => {
       [req.user.id, event_id, total_quantity, total_price, 'pending']
     );
 
-    // Insert ticket booking details if applicable
     if (ticket_details && Array.isArray(ticket_details) && ticket_details.length > 0) {
       for (const detail of ticket_details) {
         const [ticketType] = await connection.query(
@@ -285,8 +254,7 @@ router.post('/', verifyToken, async (req, res) => {
     await connection.commit();
 
     const [newBooking] = await db.query(`
-      SELECT b.*, 
-             e.title as event_title, e.event_date, e.image_url as event_image,
+      SELECT b.*, e.title as event_title, e.event_date, e.image_url as event_image,
              v.name as venue_name
       FROM bookings b
       JOIN events e ON b.event_id = e.id
@@ -338,21 +306,33 @@ router.put('/:id/cancel', verifyToken, async (req, res) => {
       return res.status(400).json({ error: { message: 'Booking already cancelled', status: 400 } });
     }
 
-    // Delete the booking from database instead of just marking as cancelled
     await connection.query(
-      'DELETE FROM bookings WHERE id = ?',
+      'UPDATE bookings SET status = ? WHERE id = ?',
+      ['cancelled', id]
+    );
+
+    const [ticketDetails] = await connection.query(
+      'SELECT ticket_type_id, quantity FROM ticket_bookings WHERE booking_id = ?',
       [id]
     );
 
-    // Release tickets back to the event
-    await connection.query(
-      'UPDATE events SET available_tickets = available_tickets + ? WHERE id = ?',
-      [booking.quantity, booking.event_id]
-    );
+    if (ticketDetails.length > 0) {
+      for (const detail of ticketDetails) {
+        await connection.query(
+          'UPDATE ticket_types SET available_quantity = available_quantity + ? WHERE id = ?',
+          [detail.quantity, detail.ticket_type_id]
+        );
+      }
+    } else {
+      await connection.query(
+        'UPDATE events SET available_tickets = available_tickets + ? WHERE id = ?',
+        [booking.quantity, booking.event_id]
+      );
+    }
 
     await connection.commit();
 
-    res.json({ message: 'Booking cancelled and deleted successfully' });
+    res.json({ message: 'Booking cancelled successfully' });
   } catch (err) {
     await connection.rollback();
     console.error('Cancel booking error:', err);
@@ -384,14 +364,10 @@ router.get('/stats/overview', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
-// Organizer Routes
 const isOrganizer = (req, res, next) => {
   if (req.user.role !== 'organizer' && req.user.role !== 'admin') {
     return res.status(403).json({
-      error: {
-        message: 'Access denied. Organizer role required',
-        status: 403
-      }
+      error: { message: 'Access denied. Organizer role required', status: 403 }
     });
   }
   next();
@@ -402,38 +378,22 @@ router.get('/organizer/event/:eventId', verifyToken, isOrganizer, async (req, re
   const { eventId } = req.params;
 
   try {
-    // Verify organizer ownership
-    const [event] = await db.query(
-      'SELECT organizer_id FROM events WHERE id = ?',
-      [eventId]
-    );
+    const [event] = await db.query('SELECT organizer_id FROM events WHERE id = ?', [eventId]);
 
     if (event.length === 0) {
-      return res.status(404).json({
-        error: { message: 'Event not found', status: 404 }
-      });
+      return res.status(404).json({ error: { message: 'Event not found', status: 404 } });
     }
 
-    // Check organizer permission if not admin
     if (req.user.role !== 'admin') {
-      const [organizer] = await db.query(
-        'SELECT id FROM organizers WHERE user_id = ?',
-        [req.user.id]
-      );
-
+      const [organizer] = await db.query('SELECT id FROM organizers WHERE user_id = ?', [req.user.id]);
       if (!organizer.length || organizer[0].id !== event[0].organizer_id) {
-        return res.status(403).json({
-          error: { message: 'Access denied', status: 403 }
-        });
+        return res.status(403).json({ error: { message: 'Access denied', status: 403 } });
       }
     }
 
-    // Get all bookings for the event with ticket details
     const [bookings] = await db.query(`
-      SELECT 
-        b.*,
-        u.username, u.email, u.full_name, u.phone,
-        e.title as event_title, e.event_date
+      SELECT b.*, u.username, u.email, u.full_name, u.phone,
+             e.title as event_title, e.event_date
       FROM bookings b
       JOIN users u ON b.user_id = u.id
       JOIN events e ON b.event_id = e.id
@@ -441,46 +401,30 @@ router.get('/organizer/event/:eventId', verifyToken, isOrganizer, async (req, re
       ORDER BY b.booking_date DESC
     `, [eventId]);
 
-    // Get ticket details for each booking
     const bookingsWithDetails = await Promise.all(
       bookings.map(async (booking) => {
         const [ticketDetails] = await db.query(`
-          SELECT 
-            tb.id,
-            tb.ticket_type_id,
-            tb.quantity,
-            tb.price_per_ticket,
-            tb.subtotal,
-            tt.name as ticket_type_name
+          SELECT tb.id, tb.ticket_type_id, tb.quantity, tb.price_per_ticket, tb.subtotal,
+                 tt.name as ticket_type_name
           FROM ticket_bookings tb
           JOIN ticket_types tt ON tb.ticket_type_id = tt.id
           WHERE tb.booking_id = ?
         `, [booking.id]);
 
-        // Parse seats if they are JSON
         let seats = booking.seats;
         if (seats) {
-          try {
-            seats = typeof seats === 'string' ? JSON.parse(seats) : seats;
-          } catch (e) {
-            seats = null;
-          }
+          try { seats = typeof seats === 'string' ? JSON.parse(seats) : seats; }
+          catch (e) { seats = null; }
         }
 
-        return {
-          ...booking,
-          seats,
-          ticket_details: ticketDetails
-        };
+        return { ...booking, seats, ticket_details: ticketDetails };
       })
     );
 
     res.json({ bookings: bookingsWithDetails });
   } catch (err) {
     console.error('Get event bookings error:', err);
-    res.status(500).json({
-      error: { message: 'Failed to fetch bookings', status: 500 }
-    });
+    res.status(500).json({ error: { message: 'Failed to fetch bookings', status: 500 } });
   }
 });
 
@@ -491,36 +435,23 @@ router.put('/:id/approve', verifyToken, isOrganizer, async (req, res) => {
 
   try {
     if (!seats || !Array.isArray(seats) || seats.length === 0) {
-      return res.status(400).json({
-        error: { message: 'Seats must be provided as an array', status: 400 }
-      });
+      return res.status(400).json({ error: { message: 'Seats must be provided as an array', status: 400 } });
     }
 
-    // Get booking and verify organizer ownership
     const [booking] = await db.query(
       `SELECT b.*, e.organizer_id FROM bookings b
-       JOIN events e ON b.event_id = e.id
-       WHERE b.id = ?`,
+       JOIN events e ON b.event_id = e.id WHERE b.id = ?`,
       [id]
     );
 
     if (booking.length === 0) {
-      return res.status(404).json({
-        error: { message: 'Booking not found', status: 404 }
-      });
+      return res.status(404).json({ error: { message: 'Booking not found', status: 404 } });
     }
 
-    // Check organizer permission if not admin
     if (req.user.role !== 'admin') {
-      const [organizer] = await db.query(
-        'SELECT id FROM organizers WHERE user_id = ?',
-        [req.user.id]
-      );
-
+      const [organizer] = await db.query('SELECT id FROM organizers WHERE user_id = ?', [req.user.id]);
       if (!organizer.length || organizer[0].id !== booking[0].organizer_id) {
-        return res.status(403).json({
-          error: { message: 'Access denied', status: 403 }
-        });
+        return res.status(403).json({ error: { message: 'Access denied', status: 403 } });
       }
     }
 
@@ -529,28 +460,17 @@ router.put('/:id/approve', verifyToken, isOrganizer, async (req, res) => {
     const approvedBy = req.user.id;
 
     await db.query(
-      `UPDATE bookings 
-       SET status = 'approved', seats = ?, notes = ?, approved_at = ?, approved_by = ?
-       WHERE id = ?`,
+      `UPDATE bookings SET status = 'approved', seats = ?, notes = ?, approved_at = ?, approved_by = ? WHERE id = ?`,
       [seatsJson, notes || null, approvedAt, approvedBy, id]
     );
 
     res.json({
       message: 'Booking approved successfully',
-      booking: {
-        id,
-        status: 'approved',
-        seats,
-        notes: notes || null,
-        approved_at: approvedAt,
-        approved_by: approvedBy
-      }
+      booking: { id, status: 'approved', seats, notes: notes || null, approved_at: approvedAt, approved_by: approvedBy }
     });
   } catch (err) {
     console.error('Approve booking error:', err);
-    res.status(500).json({
-      error: { message: 'Failed to approve booking', status: 500 }
-    });
+    res.status(500).json({ error: { message: 'Failed to approve booking', status: 500 } });
   }
 });
 
@@ -559,51 +479,29 @@ router.put('/:id/reject', verifyToken, isOrganizer, async (req, res) => {
   const { id } = req.params;
 
   try {
-    // Get booking and verify organizer ownership
     const [booking] = await db.query(
       `SELECT b.*, e.organizer_id FROM bookings b
-       JOIN events e ON b.event_id = e.id
-       WHERE b.id = ?`,
+       JOIN events e ON b.event_id = e.id WHERE b.id = ?`,
       [id]
     );
 
     if (booking.length === 0) {
-      return res.status(404).json({
-        error: { message: 'Booking not found', status: 404 }
-      });
+      return res.status(404).json({ error: { message: 'Booking not found', status: 404 } });
     }
 
-    // Check organizer permission if not admin
     if (req.user.role !== 'admin') {
-      const [organizer] = await db.query(
-        'SELECT id FROM organizers WHERE user_id = ?',
-        [req.user.id]
-      );
-
+      const [organizer] = await db.query('SELECT id FROM organizers WHERE user_id = ?', [req.user.id]);
       if (!organizer.length || organizer[0].id !== booking[0].organizer_id) {
-        return res.status(403).json({
-          error: { message: 'Access denied', status: 403 }
-        });
+        return res.status(403).json({ error: { message: 'Access denied', status: 403 } });
       }
     }
 
-    await db.query(
-      'UPDATE bookings SET status = ? WHERE id = ?',
-      ['cancelled', id]
-    );
+    await db.query('UPDATE bookings SET status = ? WHERE id = ?', ['cancelled', id]);
 
-    res.json({
-      message: 'Booking rejected successfully',
-      booking: {
-        id,
-        status: 'cancelled'
-      }
-    });
+    res.json({ message: 'Booking rejected successfully', booking: { id, status: 'cancelled' } });
   } catch (err) {
     console.error('Reject booking error:', err);
-    res.status(500).json({
-      error: { message: 'Failed to reject booking', status: 500 }
-    });
+    res.status(500).json({ error: { message: 'Failed to reject booking', status: 500 } });
   }
 });
 

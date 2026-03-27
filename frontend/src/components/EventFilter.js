@@ -1,32 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { categoriesAPI } from '../services/api';
-import '../styles/EventFilter.css';
+import { useState, useEffect } from "react";
+import { categoriesAPI } from "../services/api";
+import "../styles/EventFilter.css";
 
 const EventFilter = ({ onFilterChange }) => {
   const [categories, setCategories] = useState([]);
-  const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('date');
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("date");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchCategories();
   }, []);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onFilterChange({ search });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search, onFilterChange]);
+
   const fetchCategories = async () => {
     try {
       const data = await categoriesAPI.getAll();
       setCategories(data.categories || []);
     } catch (err) {
-      console.error('Failed to fetch categories');
+      console.error("Failed to fetch categories");
     } finally {
       setLoading(false);
     }
   };
 
   const handleSearchChange = (e) => {
-    const value = e.target.value;
-    setSearch(value);
-    onFilterChange({ search: value });
+    setSearch(e.target.value);
   };
 
   const handleSortChange = (e) => {
@@ -40,7 +45,7 @@ const EventFilter = ({ onFilterChange }) => {
     if (value) {
       onFilterChange({ category_id: value });
     } else {
-      onFilterChange({ category_id: '' });
+      onFilterChange({ category_id: "" });
     }
   };
 

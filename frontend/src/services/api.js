@@ -25,8 +25,9 @@ const apiCall = async (endpoint, options = {}) => {
   if (response.status === 204) {
     return {};
   }
+
   const contentType = response.headers.get('content-type');
-  
+
   let data;
   if (contentType && contentType.includes('application/json')) {
     data = await response.json();
@@ -42,10 +43,12 @@ const apiCall = async (endpoint, options = {}) => {
       data
     });
 
-    const errorMessage = data.error?.message || 
-                        data.message || 
+    const errorMessage = data.error?.message ||
+                        data.message ||
                         `HTTP ${response.status}: ${response.statusText}`;
-    throw new Error(errorMessage);
+    const error = new Error(errorMessage);
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -61,8 +64,7 @@ export const organizerAPI = {
       },
       body: JSON.stringify(eventData),
     }),
-  
- 
+
   getMyEvents: (params = {}) => {
     const query = new URLSearchParams(params).toString();
     return apiCall(`/events/organizer/my-events?${query}`);
@@ -75,9 +77,9 @@ export const organizerAPI = {
       method: 'PUT',
       body: JSON.stringify(eventData),
     }),
- 
+
   getVenues: () => apiCall('/events/venues/list'),
-  
+
   getCategories: () => apiCall('/events/categories/list'),
 
   getEventBookings: (eventId) =>
@@ -179,14 +181,6 @@ export const categoriesAPI = {
   getAll: () => apiCall('/categories'),
 };
 
-export const usersAPI = {
-  getProfile: () => apiCall('/users/profile'),
-  updateProfile: (userData) =>
-    apiCall('/users/profile', {
-      method: 'PUT',
-      body: JSON.stringify(userData),
-    }),
-};
 
 export const contactAPI = {
   send: (data) =>
@@ -210,7 +204,6 @@ export const adminAPI = {
 };
 
 export const debugAPI = {
-
   testCreateEvent: async () => {
     const testData = {
       title: "TEST EVENT DEBUG",
@@ -223,10 +216,10 @@ export const debugAPI = {
       price: 500000,
       image_url: ""
     };
-    
+
     console.log('=== TESTING API ===');
     console.log('Sending test data:', testData);
-    
+
     try {
       const response = await organizerAPI.createEvent(testData);
       console.log('API Response:', response);
@@ -236,26 +229,25 @@ export const debugAPI = {
       throw error;
     }
   },
-  
+
   testGetVenues: async () => {
     try {
       const response = await organizerAPI.getVenues();
-      console.log(' Venues:', response);
+      console.log('Venues:', response);
       return response;
     } catch (error) {
-      console.error(' Get Venues Error:', error);
+      console.error('Get Venues Error:', error);
       return { venues: [] };
     }
   },
-  
 
   testGetCategories: async () => {
     try {
       const response = await organizerAPI.getCategories();
-      console.log('✅ Categories:', response);
+      console.log('Categories:', response);
       return response;
     } catch (error) {
-      console.error('❌ Get Categories Error:', error);
+      console.error('Get Categories Error:', error);
       return { categories: [] };
     }
   }

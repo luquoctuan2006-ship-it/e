@@ -100,7 +100,6 @@ router.post('/organizer/create', verifyToken, isOrganizer, async (req, res) => {
       WHERE e.id = ?
     `, [result.insertId]);
 
-    // Handle ticket types if provided
     if (ticket_types && Array.isArray(ticket_types) && ticket_types.length > 0) {
       for (const ticketType of ticket_types) {
         await db.query(
@@ -150,7 +149,6 @@ router.get('/organizer/details/:id', verifyToken, isOrganizer, async (req, res) 
   const eventId = req.params.id;
 
   try {
-    // Get the organizer ID for the current user
     let [organizerResult] = await db.query(
       'SELECT id FROM organizers WHERE user_id = ?',
       [req.user.id]
@@ -178,7 +176,6 @@ router.get('/organizer/details/:id', verifyToken, isOrganizer, async (req, res) 
       organizerId = organizerResult[0].id;
     }
 
-    // Get event and verify it belongs to this organizer
     const [events] = await db.query(`
       SELECT e.* 
       FROM events e
@@ -212,7 +209,6 @@ router.put('/organizer/update/:id', verifyToken, isOrganizer, async (req, res) =
   const { title, description, event_date, venue_id, price, image_url, category_id } = req.body;
 
   try {
-    // Get the organizer ID for the current user
     let [organizerResult] = await db.query(
       'SELECT id FROM organizers WHERE user_id = ?',
       [req.user.id]
@@ -240,7 +236,6 @@ router.put('/organizer/update/:id', verifyToken, isOrganizer, async (req, res) =
       organizerId = organizerResult[0].id;
     }
 
-    // Verify the event belongs to this organizer
     const [checkEvent] = await db.query(
       'SELECT id FROM events WHERE id = ? AND organizer_id = ?',
       [eventId, organizerId]
@@ -255,7 +250,6 @@ router.put('/organizer/update/:id', verifyToken, isOrganizer, async (req, res) =
       });
     }
 
-    // Validate required fields
     if (!title || !event_date || !venue_id || price === undefined) {
       return res.status(400).json({ 
         error: { 
@@ -265,14 +259,12 @@ router.put('/organizer/update/:id', verifyToken, isOrganizer, async (req, res) =
       });
     }
 
-    // Update the event
     await db.query(`
       UPDATE events 
       SET title = ?, description = ?, event_date = ?, venue_id = ?, price = ?, image_url = ?, category_id = ?
       WHERE id = ? AND organizer_id = ?
     `, [title, description || null, event_date, venue_id, price, image_url || null, category_id || null, eventId, organizerId]);
 
-    // Fetch and return updated event
     const [event] = await db.query(`
       SELECT e.*, 
              v.name as venue_name, v.city,
@@ -347,7 +339,8 @@ router.get('/organizer/my-events', verifyToken, isOrganizer, async (req, res) =>
              v.name as venue_name, v.city,
              c.name as category_name,
              COUNT(DISTINCT b.id) as total_bookings,
-             COALESCE(SUM(CASE WHEN b.status = 'confirmed' THEN b.quantity ELSE 0 END), 0) as sold_tickets
+             COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'approved') THEN b.quantity ELSE 0 END), 0) as sold_tickets,
+             COALESCE(SUM(CASE WHEN b.status IN ('confirmed', 'approved') THEN b.total_price ELSE 0 END), 0) as total_revenue
       FROM events e
       JOIN venues v ON e.venue_id = v.id
       LEFT JOIN categories c ON e.category_id = c.id
@@ -700,7 +693,6 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
-// Ticket Types Routes
 router.get('/:id/ticket-types', optionalAuth, async (req, res) => {
   const db = req.app.locals.db;
 
@@ -736,7 +728,6 @@ router.post('/:id/ticket-types', verifyToken, isOrganizer, async (req, res) => {
       });
     }
 
-    // Verify event exists and belongs to organizer
     const [event] = await db.query(
       'SELECT organizer_id FROM events WHERE id = ?',
       [eventId]
@@ -748,7 +739,6 @@ router.post('/:id/ticket-types', verifyToken, isOrganizer, async (req, res) => {
       });
     }
 
-    // Check organizer permission if not admin
     if (req.user.role !== 'admin') {
       const [organizer] = await db.query(
         'SELECT id FROM organizers WHERE user_id = ?',
@@ -794,7 +784,6 @@ router.put('/ticket-types/:ticketTypeId', verifyToken, isOrganizer, async (req, 
   const ticketTypeId = req.params.ticketTypeId;
 
   try {
-    // Get ticket type and verify event ownership
     const [ticketType] = await db.query(
       `SELECT tt.*, e.organizer_id FROM ticket_types tt
        JOIN events e ON tt.event_id = e.id
@@ -808,7 +797,6 @@ router.put('/ticket-types/:ticketTypeId', verifyToken, isOrganizer, async (req, 
       });
     }
 
-    // Check organizer permission if not admin
     if (req.user.role !== 'admin') {
       const [organizer] = await db.query(
         'SELECT id FROM organizers WHERE user_id = ?',
@@ -841,7 +829,6 @@ router.delete('/ticket-types/:ticketTypeId', verifyToken, isOrganizer, async (re
   const ticketTypeId = req.params.ticketTypeId;
 
   try {
-    // Get ticket type and verify event ownership
     const [ticketType] = await db.query(
       `SELECT tt.*, e.organizer_id FROM ticket_types tt
        JOIN events e ON tt.event_id = e.id
@@ -855,7 +842,6 @@ router.delete('/ticket-types/:ticketTypeId', verifyToken, isOrganizer, async (re
       });
     }
 
-    // Check organizer permission if not admin
     if (req.user.role !== 'admin') {
       const [organizer] = await db.query(
         'SELECT id FROM organizers WHERE user_id = ?',

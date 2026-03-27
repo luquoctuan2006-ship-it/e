@@ -53,11 +53,11 @@ app.use('/api/contacts', contactRoutes);
 app.use('/api/admin', adminRoutes);
 
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
 });
 
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
   console.error(err.stack);
   res.status(err.status || 500).json({
     error: {
@@ -67,7 +67,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.use((req, res) => {
+app.use((_req, res) => {
   res.status(404).json({ error: { message: 'Route not found', status: 404 } });
 });
 

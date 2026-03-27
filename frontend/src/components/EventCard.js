@@ -1,4 +1,3 @@
-import React from 'react';
 import '../styles/EventCard.css';
 
 const EventCard = ({ event, onClick }) => {

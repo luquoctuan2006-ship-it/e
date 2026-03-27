@@ -1,48 +1,49 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { eventsAPI } from '../services/api';
-import EventCard from '../components/EventCard';
-import EventFilter from '../components/EventFilter';
-import '../styles/HomePage.css';
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { eventsAPI } from "../services/api";
+import EventCard from "../components/EventCard";
+import EventFilter from "../components/EventFilter";
+import "../styles/HomePage.css";
 
 const HomePage = () => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [pagination, setPagination] = useState({});
   const [filters, setFilters] = useState({
     page: 1,
     limit: 10,
-    search: '',
-    sort: 'date',
+    search: "",
+    sort: "date",
   });
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchEvents();
-  }, [filters]);
+const fetchEvents = useCallback(async () => {
+  try {
+    setLoading(true);
+    setError('');
+    const data = await eventsAPI.getAll(filters);
+    setEvents(data.events);
+    setPagination(data.pagination);
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+}, [filters])
 
-  const fetchEvents = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const data = await eventsAPI.getAll(filters);
-      setEvents(data.events);
-      setPagination(data.pagination);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+useEffect(() => {
+  fetchEvents();
+}, [fetchEvents]);
 
-  const handleFilterChange = (newFilters) => {
+
+  const handleFilterChange = useCallback((newFilters) => {
     setFilters((prev) => ({
       ...prev,
       ...newFilters,
       page: 1,
     }));
-  };
+  }, []);
 
   const handlePageChange = (newPage) => {
     setFilters((prev) => ({
@@ -89,10 +90,13 @@ const HomePage = () => {
                   Trang trước
                 </button>
                 <span>
-                  Trang {filters.page} / {Math.ceil(pagination.total / filters.limit)}
+                  Trang {filters.page} /{" "}
+                  {Math.ceil(pagination.total / filters.limit)}
                 </span>
                 <button
-                  disabled={filters.page >= Math.ceil(pagination.total / filters.limit)}
+                  disabled={
+                    filters.page >= Math.ceil(pagination.total / filters.limit)
+                  }
                   onClick={() => handlePageChange(filters.page + 1)}
                 >
                   Trang tiếp

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { organizerAPI } from '../services/api';
@@ -30,7 +30,7 @@ const CreateEventPage = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!user || (user.role !== 'organizer' && user.role !== 'admin')) {
+    if (!user || (user.role !== 'organizer')) {
       navigate('/');
     }
   }, [user, navigate]);
