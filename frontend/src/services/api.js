@@ -16,8 +16,10 @@ const apiCall = async (endpoint, options = {}) => {
     headers,
   };
 
-  if (options.body && typeof options.body === 'object') {
-    config.body = JSON.stringify(options.body);
+  if (options.body !== undefined) {
+    config.body = typeof options.body === 'object'
+      ? JSON.stringify(options.body)
+      : options.body;
   }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
@@ -43,8 +45,8 @@ const apiCall = async (endpoint, options = {}) => {
       data
     });
 
-    const errorMessage = data.error?.message ||
-                        data.message ||
+    const errorMessage = data?.error?.message ||
+                        data?.message ||
                         `HTTP ${response.status}: ${response.statusText}`;
     const error = new Error(errorMessage);
     error.status = response.status;
@@ -59,10 +61,7 @@ export const organizerAPI = {
   createEvent: (eventData) =>
     apiCall('/events/organizer/create', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(eventData),
+      body: eventData,
     }),
 
   getMyEvents: (params = {}) => {
@@ -75,7 +74,7 @@ export const organizerAPI = {
   updateEvent: (id, eventData) =>
     apiCall(`/events/organizer/update/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(eventData),
+      body: eventData,
     }),
 
   getVenues: () => apiCall('/events/venues/list'),
@@ -88,7 +87,7 @@ export const organizerAPI = {
   approveBooking: (bookingId, approvalData) =>
     apiCall(`/bookings/${bookingId}/approve`, {
       method: 'PUT',
-      body: JSON.stringify(approvalData),
+      body: approvalData,
     }),
 
   rejectBooking: (bookingId) =>
@@ -101,12 +100,12 @@ export const authAPI = {
   register: (userData) =>
     apiCall('/auth/register', {
       method: 'POST',
-      body: JSON.stringify(userData),
+      body: userData,
     }),
   login: (credentials) =>
     apiCall('/auth/login', {
       method: 'POST',
-      body: JSON.stringify(credentials),
+      body: credentials,
     }),
   logout: () => {
     localStorage.removeItem('token');
@@ -128,12 +127,12 @@ export const eventsAPI = {
   create: (eventData) =>
     apiCall('/events', {
       method: 'POST',
-      body: JSON.stringify(eventData),
+      body: eventData,
     }),
   update: (id, eventData) =>
     apiCall(`/events/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(eventData),
+      body: eventData,
     }),
   delete: (id) =>
     apiCall(`/events/${id}`, {
@@ -144,7 +143,7 @@ export const eventsAPI = {
   createTicketType: (eventId, ticketData) =>
     apiCall(`/events/${eventId}/ticket-types`, {
       method: 'POST',
-      body: JSON.stringify(ticketData),
+      body: ticketData,
     }),
 };
 
@@ -161,7 +160,7 @@ export const bookingsAPI = {
   create: (bookingData) =>
     apiCall('/bookings', {
       method: 'POST',
-      body: JSON.stringify(bookingData),
+      body: bookingData,
     }),
   cancel: (id) =>
     apiCall(`/bookings/${id}/cancel`, {
@@ -181,12 +180,11 @@ export const categoriesAPI = {
   getAll: () => apiCall('/categories'),
 };
 
-
 export const contactAPI = {
   send: (data) =>
     apiCall('/contacts', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: data,
     }),
   getMine: () => apiCall('/contacts/me'),
 };
@@ -199,7 +197,7 @@ export const adminAPI = {
   respondContact: (id, response) =>
     apiCall(`/admin/contacts/${id}/respond`, {
       method: 'POST',
-      body: JSON.stringify({ response }),
+      body: { response },
     }),
 };
 

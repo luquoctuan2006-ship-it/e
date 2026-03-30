@@ -1,4 +1,3 @@
-
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -17,8 +16,17 @@ router.post('/register', async (req, res) => {
         error: { message: 'Username, email, and password are required', status: 400 } 
       });
     }
+
     const validRoles = ['user', 'organizer'];
     const userRole = validRoles.includes(role) ? role : 'user';
+
+    if (userRole === 'organizer') {
+      if (!organizerData || !organizerData.name) {
+        return res.status(400).json({ 
+          error: { message: 'Organizer name is required', status: 400 } 
+        });
+      }
+    }
 
     const [existingUsers] = await db.query(
       'SELECT id FROM users WHERE email = ? OR username = ?',
@@ -27,9 +35,10 @@ router.post('/register', async (req, res) => {
 
     if (existingUsers.length > 0) {
       return res.status(409).json({ 
-        error: { message: 'User already exists', status: 409 } 
+        error: { message: 'Email hoặc tên đăng nhập đã tồn tại', status: 409 } 
       });
     }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     await db.query('START TRANSACTION');
 
@@ -42,18 +51,12 @@ router.post('/register', async (req, res) => {
       const userId = userResult.insertId;
 
       if (userRole === 'organizer') {
-        if (!organizerData || !organizerData.name) {
-          await db.query('ROLLBACK');
-          return res.status(400).json({ 
-            error: { message: 'Organizer name is required', status: 400 } 
-          });
-        }
         await db.query(
           'INSERT INTO organizers (name, email, phone, description, website, logo_url, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [
             organizerData.name,
             organizerData.email || email,
-            organizerData.phone || phone,
+            organizerData.phone || phone || null,
             organizerData.description || null,
             organizerData.website || null,
             organizerData.logo_url || null,
@@ -76,19 +79,20 @@ router.post('/register', async (req, res) => {
       );
 
       res.status(201).json({
-        message: 'User registered successfully',
+        message: 'Đăng ký thành công',
         token,
         user: user[0]
       });
 
     } catch (err) {
       await db.query('ROLLBACK');
+      console.error('Register transaction error:', err.message, '| Code:', err.code);
       throw err;
     }
   } catch (err) {
-    console.error('Register error:', err);
+    console.error('Register error:', err.message, '| Code:', err.code);
     res.status(500).json({ 
-      error: { message: 'Failed to register user', status: 500 } 
+      error: { message: 'Đăng ký thất bại: ' + err.message, status: 500 } 
     });
   }
 });
@@ -100,9 +104,10 @@ router.post('/login', async (req, res) => {
   try {
     if (!email || !password) {
       return res.status(400).json({ 
-        error: { message: 'Email and password are required', status: 400 } 
+        error: { message: 'Email và mật khẩu là bắt buộc', status: 400 } 
       });
     }
+
     const [users] = await db.query(
       'SELECT id, username, email, password, role FROM users WHERE email = ?',
       [email]
@@ -110,17 +115,16 @@ router.post('/login', async (req, res) => {
 
     if (users.length === 0) {
       return res.status(401).json({ 
-        error: { message: 'Invalid email or password', status: 401 } 
+        error: { message: 'Email hoặc mật khẩu không đúng', status: 401 } 
       });
     }
 
     const user = users[0];
-
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
       return res.status(401).json({ 
-        error: { message: 'Invalid email or password', status: 401 } 
+        error: { message: 'Email hoặc mật khẩu không đúng', status: 401 } 
       });
     }
 
@@ -136,17 +140,18 @@ router.post('/login', async (req, res) => {
     );
 
     res.json({
-      message: 'Login successful',
+      message: 'Đăng nhập thành công',
       token,
       user: userDetails[0]
     });
   } catch (err) {
-    console.error('Login error:', err);
+    console.error('Login error:', err.message);
     res.status(500).json({ 
-      error: { message: 'Failed to login', status: 500 } 
+      error: { message: 'Đăng nhập thất bại', status: 500 } 
     });
   }
 });
+
 router.get('/me', verifyToken, async (req, res) => {
   const db = req.app.locals.db;
 
@@ -158,18 +163,19 @@ router.get('/me', verifyToken, async (req, res) => {
 
     if (user.length === 0) {
       return res.status(404).json({ 
-        error: { message: 'User not found', status: 404 } 
+        error: { message: 'Không tìm thấy người dùng', status: 404 } 
       });
     }
 
     res.json({ user: user[0] });
   } catch (err) {
-    console.error('Get current user error:', err);
+    console.error('Get current user error:', err.message);
     res.status(500).json({ 
-      error: { message: 'Failed to fetch user', status: 500 } 
+      error: { message: 'Lấy thông tin người dùng thất bại', status: 500 } 
     });
   }
 });
+
 router.put('/profile', verifyToken, async (req, res) => {
   const db = req.app.locals.db;
   const { full_name, phone } = req.body;
@@ -186,16 +192,17 @@ router.put('/profile', verifyToken, async (req, res) => {
     );
 
     res.json({
-      message: 'Profile updated successfully',
+      message: 'Cập nhật hồ sơ thành công',
       user: user[0]
     });
   } catch (err) {
-    console.error('Update profile error:', err);
+    console.error('Update profile error:', err.message);
     res.status(500).json({ 
-      error: { message: 'Failed to update profile', status: 500 } 
+      error: { message: 'Cập nhật hồ sơ thất bại', status: 500 } 
     });
   }
 });
+
 router.post('/change-password', verifyToken, async (req, res) => {
   const db = req.app.locals.db;
   const { oldPassword, newPassword } = req.body;
@@ -203,9 +210,10 @@ router.post('/change-password', verifyToken, async (req, res) => {
   try {
     if (!oldPassword || !newPassword) {
       return res.status(400).json({ 
-        error: { message: 'Old password and new password are required', status: 400 } 
+        error: { message: 'Mật khẩu cũ và mới là bắt buộc', status: 400 } 
       });
     }
+
     const [users] = await db.query(
       'SELECT password FROM users WHERE id = ?',
       [req.user.id]
@@ -213,34 +221,36 @@ router.post('/change-password', verifyToken, async (req, res) => {
 
     if (users.length === 0) {
       return res.status(404).json({ 
-        error: { message: 'User not found', status: 404 } 
+        error: { message: 'Không tìm thấy người dùng', status: 404 } 
       });
     }
+
     const passwordMatch = await bcrypt.compare(oldPassword, users[0].password);
 
     if (!passwordMatch) {
       return res.status(401).json({ 
-        error: { message: 'Invalid old password', status: 401 } 
+        error: { message: 'Mật khẩu cũ không đúng', status: 401 } 
       });
     }
+
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await db.query(
       'UPDATE users SET password = ? WHERE id = ?',
       [hashedPassword, req.user.id]
     );
 
-    res.json({ message: 'Password changed successfully' });
+    res.json({ message: 'Đổi mật khẩu thành công' });
   } catch (err) {
-    console.error('Change password error:', err);
+    console.error('Change password error:', err.message);
     res.status(500).json({ 
-      error: { message: 'Failed to change password', status: 500 } 
+      error: { message: 'Đổi mật khẩu thất bại', status: 500 } 
     });
   }
 });
 
 router.post('/create-organizer-profile', verifyToken, async (req, res) => {
   const db = req.app.locals.db;
-  const { organizer_name, phone, address, bio } = req.body;
+  const { name, phone, description, website, logo_url } = req.body;
 
   try {
     const [users] = await db.query(
@@ -250,7 +260,7 @@ router.post('/create-organizer-profile', verifyToken, async (req, res) => {
 
     if (users.length === 0) {
       return res.status(404).json({ 
-        error: { message: 'User not found', status: 404 } 
+        error: { message: 'Không tìm thấy người dùng', status: 404 } 
       });
     }
 
@@ -258,7 +268,7 @@ router.post('/create-organizer-profile', verifyToken, async (req, res) => {
 
     if (user.role !== 'organizer') {
       return res.status(403).json({ 
-        error: { message: 'Only organizers can create organizer profiles', status: 403 } 
+        error: { message: 'Chỉ tài khoản tổ chức mới có thể tạo hồ sơ tổ chức', status: 403 } 
       });
     }
 
@@ -269,32 +279,33 @@ router.post('/create-organizer-profile', verifyToken, async (req, res) => {
 
     if (existingOrganizers.length > 0) {
       return res.status(409).json({ 
-        error: { message: 'Organizer profile already exists', status: 409 } 
+        error: { message: 'Hồ sơ tổ chức đã tồn tại', status: 409 } 
       });
     }
 
     const [result] = await db.query(
-      `INSERT INTO organizers (user_id, organizer_name, contact_email, phone, address, bio, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      `INSERT INTO organizers (name, email, phone, description, website, logo_url, user_id) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
-        req.user.id,
-        organizer_name || user.full_name || user.username,
+        name || user.full_name || user.username,
         user.email,
         phone || null,
-        address || null,
-        bio || null
+        description || null,
+        website || null,
+        logo_url || null,
+        req.user.id
       ]
     );
 
     res.status(201).json({
-      message: 'Organizer profile created successfully',
+      message: 'Tạo hồ sơ tổ chức thành công',
       organizer_id: result.insertId
     });
 
   } catch (err) {
-    console.error('Create organizer profile error:', err);
+    console.error('Create organizer profile error:', err.message, '| Code:', err.code);
     res.status(500).json({ 
-      error: { message: 'Failed to create organizer profile', status: 500 } 
+      error: { message: 'Tạo hồ sơ tổ chức thất bại: ' + err.message, status: 500 } 
     });
   }
 });

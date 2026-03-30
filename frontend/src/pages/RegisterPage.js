@@ -46,10 +46,9 @@ const RegisterPage = () => {
   };
 
   const handleRoleChange = (e) => {
-    const { value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      role: value,
+      role: e.target.value,
     }));
   };
 
@@ -62,14 +61,26 @@ const RegisterPage = () => {
       return;
     }
 
+    if (formData.role === 'organizer' && !formData.organizerData.name.trim()) {
+      setError('Vui lòng nhập tên tổ chức');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const { confirmPassword, ...data } = formData;
-      await register(data);
+      const { confirmPassword, organizerData, role, ...baseData } = formData;
+
+      const payload = {
+        ...baseData,
+        role,
+        ...(role === 'organizer' && { organizerData }),
+      };
+
+      await register(payload);
       navigate('/');
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Đăng ký thất bại, vui lòng thử lại');
     } finally {
       setLoading(false);
     }
@@ -106,8 +117,9 @@ const RegisterPage = () => {
               </label>
             </div>
           </div>
+
           <div className="form-group">
-            <label>Tên đăng nhập</label>
+            <label>Tên đăng nhập *</label>
             <input
               type="text"
               name="username"
@@ -116,8 +128,9 @@ const RegisterPage = () => {
               required
             />
           </div>
+
           <div className="form-group">
-            <label>Email</label>
+            <label>Email *</label>
             <input
               type="email"
               name="email"
@@ -126,6 +139,7 @@ const RegisterPage = () => {
               required
             />
           </div>
+
           <div className="form-group">
             <label>Tên đầy đủ</label>
             <input
@@ -135,6 +149,7 @@ const RegisterPage = () => {
               onChange={handleChange}
             />
           </div>
+
           <div className="form-group">
             <label>Số điện thoại</label>
             <input
@@ -144,6 +159,7 @@ const RegisterPage = () => {
               onChange={handleChange}
             />
           </div>
+
           {formData.role === 'organizer' && (
             <>
               <div className="form-group">
@@ -203,8 +219,9 @@ const RegisterPage = () => {
               </div>
             </>
           )}
+
           <div className="form-group">
-            <label>Mật khẩu</label>
+            <label>Mật khẩu *</label>
             <input
               type="password"
               name="password"
@@ -213,8 +230,9 @@ const RegisterPage = () => {
               required
             />
           </div>
+
           <div className="form-group">
-            <label>Xác nhận mật khẩu</label>
+            <label>Xác nhận mật khẩu *</label>
             <input
               type="password"
               name="confirmPassword"
@@ -223,6 +241,7 @@ const RegisterPage = () => {
               required
             />
           </div>
+
           <button type="submit" disabled={loading}>
             {loading ? 'Đang đăng ký...' : 'Đăng Ký'}
           </button>
